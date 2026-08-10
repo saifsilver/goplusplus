@@ -58,3 +58,21 @@ func BenchmarkRouterParallel(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkZeroAllocEndpoint(b *testing.B) {
+	app := New()
+	payload := []byte(`{"status":"ok"}`)
+	app.GET("/api/v1/bench/:id", func(c *Context) error {
+		return c.Data(http.StatusOK, "application/json", payload)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/bench/100", nil)
+	rec := httptest.NewRecorder()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		app.ServeHTTP(rec, req)
+	}
+}
