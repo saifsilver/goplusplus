@@ -252,6 +252,32 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## ⚙️ Configuration & Secret Vault Suite (`config`)
+
+Zero-dependency `.env` file loader, type-safe getters, secret masker, and struct tag unmarshaler:
+
+```go
+// 1. Load .env file automatically
+_ = config.Load(".env")
+
+// 2. Unmarshal into struct via `env:"KEY"` tags
+type AppConfig struct {
+    Port   string `env:"PORT" default:":8080"`
+    DBURL  string `env:"DATABASE_URL"`
+    Secret string `env:"JWT_SECRET"`
+}
+
+var cfg AppConfig
+_ = config.Unmarshal(&cfg)
+
+// 3. Type-Safe Getters & Secret Masker
+port   := config.GetString("PORT", ":8080")
+conns  := config.GetInt("MAX_CONNS", 100)
+secret := config.MaskSecret(cfg.Secret) // Redacts secret: "sup...91823"
+```
+
+---
+
 ## ☁️ Cloud Infrastructure Suite (SQLite, S3, CloudFront, Elasticsearch, Kafka, RabbitMQ)
 
 `goplusplus` includes built-in driver adapters for enterprise cloud services:
