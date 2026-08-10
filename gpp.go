@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// Version is the current release version of the goplusplus framework.
+const Version = "v1.0.0"
+
 // Module defines the contract for self-contained domain modules in a modular monolith.
 type Module interface {
 	Name() string
