@@ -15,3 +15,4 @@ multi_protocol
 # OS / Editor files
 .DS_Store
 *.png
+cmd.log
