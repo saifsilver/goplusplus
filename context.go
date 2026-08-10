@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -166,10 +168,42 @@ func (c *Context) BindJSON(v any) error {
 	return decoder.Decode(v)
 }
 
-// Validate executes struct tag validation and returns ErrBadRequest on failure.
+// Validate executes struct tag validation (e.g. validate:"required", validate:"email") and returns ErrBadRequest on failure.
 func (c *Context) Validate(v any) error {
 	if v == nil {
 		return ErrBadRequest("Validation target cannot be nil")
+	}
+	val := reflect.ValueOf(v)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return nil
+	}
+
+	typ := val.Type()
+	for i := 0; i < val.NumField(); i++ {
+		field := typ.Field(i)
+		fieldVal := val.Field(i)
+		tag := field.Tag.Get("validate")
+		if tag == "" {
+			continue
+		}
+
+		rules := strings.Split(tag, ",")
+		for _, rule := range rules {
+			rule = strings.TrimSpace(rule)
+			if rule == "required" {
+				if fieldVal.IsZero() {
+					return ErrBadRequest(fmt.Sprintf("Field '%s' is required", field.Name))
+				}
+			} else if rule == "email" {
+				str := fmt.Sprintf("%v", fieldVal.Interface())
+				if str != "" && (!strings.Contains(str, "@") || !strings.Contains(str, ".")) {
+					return ErrBadRequest(fmt.Sprintf("Field '%s' must be a valid email address", field.Name))
+				}
+			}
+		}
 	}
 	return nil
 }
