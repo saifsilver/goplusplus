@@ -24,7 +24,7 @@ PORT ?= 8089
 
 load-test: ## Launch load test server on http://localhost:$(PORT)
 	@echo "🚀 Starting high-throughput load test server on port $(PORT)..."
-	@echo "   Use 'ab -n 100000 -c 100 http://localhost:$(PORT)/api/v1/bench/100' in another terminal to benchmark!"
+	@echo "   Use 'ab -n 100000 -c 100 -k http://localhost:$(PORT)/api/v1/bench/100' in another terminal to benchmark!"
 	PORT=$(PORT) GOCACHE=$$(pwd)/.cache GOTMPDIR=$$(pwd)/.tmp TMPDIR=$$(pwd)/.tmp CGO_ENABLED=0 go run ./examples/load_test/main.go
 
 fmt: ## Format Go source code

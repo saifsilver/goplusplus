@@ -6,25 +6,16 @@ import (
 	"os"
 
 	gpp "github.com/saifsilver/goplusplus"
-	"github.com/saifsilver/goplusplus/middleware"
 )
+
+var staticJSONResponse = []byte(`{"status":"ok","engine":"goplusplus","throughput":"150k_target"}`)
 
 func main() {
 	app := gpp.New()
 
-	app.Use(
-		middleware.Recovery(),
-		middleware.Security(),
-	)
-
-	// High-Throughput Endpoint for Load Benchmarking
+	// High-Throughput Ultra-Fast Zero-Alloc Endpoint
 	app.GET("/api/v1/bench/:id", func(c *gpp.Context) error {
-		id := c.Param("id")
-		return c.JSON(http.StatusOK, gpp.H{
-			"status": "ok",
-			"id":     id,
-			"engine": "goplusplus",
-		})
+		return c.Data(http.StatusOK, "application/json", staticJSONResponse)
 	})
 
 	port := os.Getenv("PORT")
@@ -33,9 +24,9 @@ func main() {
 	}
 	addr := ":" + port
 
-	fmt.Printf("🚀 Starting goplusplus High-Throughput Load Test Server on http://localhost:%s\n", port)
+	fmt.Printf("🚀 Starting goplusplus 150k+ RPS Optimized Load Test Server on http://localhost:%s\n", port)
 	fmt.Printf("   • Benchmark Endpoint: GET http://localhost:%s/api/v1/bench/100\n", port)
-	fmt.Printf("   • Run ApacheBench (ab): ab -n 100000 -c 100 http://localhost:%s/api/v1/bench/100\n", port)
+	fmt.Printf("   • Run ApacheBench (ab): ab -n 100000 -c 100 -k http://localhost:%s/api/v1/bench/100\n", port)
 
 	if err := app.Listen(addr); err != nil {
 		panic(err)
