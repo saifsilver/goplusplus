@@ -19,12 +19,8 @@ type AppConfig struct {
 }
 
 func main() {
-	// 1. Load .env file automatically
-	_ = config.Load(".env")
-
-	// 2. Unmarshal into type-safe struct using `env:"KEY"` tags
-	var cfg AppConfig
-	_ = config.Unmarshal(&cfg)
+	// 1. One-line configuration loading (.env + env vars + struct defaults)
+	cfg := config.MustLoad[AppConfig]()
 
 	// 3. Initialize goplusplus App Engine
 	app := gpp.New()
