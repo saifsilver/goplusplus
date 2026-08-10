@@ -1,8 +1,8 @@
 # `goplusplus` (`gpp`)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/saifsilver/goplusplus.svg)](https://pkg.go.dev/github.com/saifsilver/goplusplus)
-[![Go Report Card](https://goreportcard.com/badge/github.com/saifsilver/goplusplus)](https://goreportcard.com/report/github.com/saifsilver/goplusplus)
-[![Release](https://img.shields.io/github/v/release/saifsilver/goplusplus?color=blue&label=version)](https://github.com/saifsilver/goplusplus/releases/tag/v1.0.0)
+[![Go Version](https://img.shields.io/badge/go-1.21%2B-00ADD8.svg)](https://go.dev/)
+[![Version](https://img.shields.io/github/v/tag/saifsilver/goplusplus?color=blue&label=version)](https://github.com/saifsilver/goplusplus/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 `goplusplus` (`gpp`) is a **zero-dependency, ultra-fast, secure, and hyper-scalable Go framework** engineered for building modern REST APIs, modular monoliths, and distributed microservices. Designed around a **90% Business Logic, 10% Infrastructure Code** philosophy, `goplusplus` reduces standard Go handler boilerplate by over 90% while keeping the learning curve under **4 hours**.
