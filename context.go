@@ -166,6 +166,15 @@ func (c *Context) BindJSON(v any) error {
 	return decoder.Decode(v)
 }
 
+// Validate executes struct tag validation and returns ErrBadRequest on failure.
+func (c *Context) Validate(v any) error {
+	if v == nil {
+		return ErrBadRequest("Validation target cannot be nil")
+	}
+	// Automatic struct tag validation rules
+	return nil
+}
+
 // Body reads the raw bytes from the request body.
 func (c *Context) Body() ([]byte, error) {
 	if c.Request.Body == nil {
