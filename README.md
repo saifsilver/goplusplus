@@ -134,6 +134,50 @@ app.Listen(":8082")
 
 ---
 
+## 📊 Observability (Prometheus Metrics & Tracing)
+
+`goplusplus` includes built-in request metrics and a Prometheus output endpoint:
+
+```go
+app.Use(middleware.Observability())
+app.GET("/metrics", middleware.Prometheus())
+```
+
+Accessing `http://localhost:8080/metrics` returns standard Prometheus counters (`http_requests_total`, `http_active_requests`) for scraping.
+
+---
+
+## 🚨 Zero-Boilerplate RFC 7807 Exception Handling
+
+`goplusplus` includes a built-in RFC 7807 Problem Details exception handling suite:
+
+```go
+app.GET("/users/:id", func(c *gpp.Context) error {
+    id := c.Param("id")
+    if id == "" {
+        return gpp.ErrBadRequest("User ID cannot be empty")
+    }
+    user, err := db.Find(id)
+    if err != nil {
+        return gpp.ErrNotFound("User with ID '" + id + "' not found")
+    }
+    return c.JSON(200, user)
+})
+```
+
+Responses automatically format as RFC 7807 Problem Details JSON:
+```json
+{
+  "type": "https://goplusplus.dev/errors/not-found",
+  "title": "Resource Not Found",
+  "status": 404,
+  "detail": "User with ID '99' not found",
+  "instance": "/users/99"
+}
+```
+
+---
+
 ## 📄 Swagger / OpenAPI Interactive Documentation UI
 
 `go++` includes built-in Swagger UI rendering for your API specs:

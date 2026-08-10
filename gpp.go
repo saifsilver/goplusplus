@@ -24,6 +24,7 @@ type Engine struct {
 	RouterGroup
 	trees            map[string]*node
 	pool             sync.Pool
+	openapi          *OpenAPIGenerator
 	NotFoundHandler  HandlerFunc
 	ErrorHandler     func(c *Context, err error)
 	Server           *http.Server
@@ -41,6 +42,7 @@ func New() *Engine {
 			prefix: "/",
 		},
 		trees:           make(map[string]*node),
+		openapi:         newOpenAPIGenerator(),
 		ReadTimeout:     15 * time.Second,
 		WriteTimeout:    15 * time.Second,
 		IdleTimeout:     60 * time.Second,
@@ -69,6 +71,8 @@ func (engine *Engine) addRoute(method, path string, handlers HandlersChain) {
 	if len(handlers) == 0 {
 		panic("gpp: handler chain cannot be empty")
 	}
+
+	engine.openapi.RegisterRoute(method, path)
 
 	root := engine.trees[method]
 	if root == nil {
@@ -211,6 +215,14 @@ func defaultErrorHandler(c *Context, err error) {
 	if c.IsAborted() {
 		return
 	}
+	var probErr *ProblemDetails
+	if errors.As(err, &probErr) {
+		if probErr.Instance == "" {
+			probErr.Instance = c.Request.URL.Path
+		}
+		_ = c.JSON(probErr.Status, probErr)
+		return
+	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		_ = c.JSON(httpErr.Code, H{
@@ -220,9 +232,11 @@ func defaultErrorHandler(c *Context, err error) {
 		})
 		return
 	}
-	_ = c.JSON(http.StatusInternalServerError, H{
-		"code":    http.StatusInternalServerError,
-		"message": "Internal Server Error",
-		"error":   err.Error(),
+	_ = c.JSON(http.StatusInternalServerError, ProblemDetails{
+		Type:     "https://goplusplus.dev/errors/internal-error",
+		Title:    "Internal Server Error",
+		Status:   http.StatusInternalServerError,
+		Detail:   err.Error(),
+		Instance: c.Request.URL.Path,
 	})
 }
