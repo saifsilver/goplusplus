@@ -134,6 +134,65 @@ app.Listen(":8082")
 
 ---
 
+## 🌐 Multi-Language (`i18n`) & Currency Formatting
+
+`goplusplus` includes built-in localization and currency formatting:
+
+```go
+app.Use(i18nBundle.Middleware())
+
+app.GET("/", func(c *gpp.Context) error {
+    lang := c.GetString("lang")
+    return c.JSON(200, gpp.H{
+        "message":   i18nBundle.Translate(lang, "welcome"),
+        "price_usd": i18n.FormatCurrency(199.99, "USD"),
+        "price_eur": i18n.FormatCurrency(199.99, "EUR"),
+    })
+})
+```
+
+---
+
+## 🏢 Multi-Tenancy Engine (`tenant`)
+
+Automatically extracts tenant isolation IDs from subdomains (`tenant.app.com`), headers (`X-Tenant-ID`), or JWT claims:
+
+```go
+app.Use(tenant.Middleware())
+
+app.GET("/data", func(c *gpp.Context) error {
+    tenantID := tenant.GetTenantID(c)
+    return c.JSON(200, gpp.H{"tenant_id": tenantID})
+})
+```
+
+---
+
+## 🔐 Identity, RBAC, ABAC & MFA (TOTP) Security Suite (`auth`)
+
+```go
+adminGroup := app.Group("/api/admin")
+adminGroup.Use(
+    auth.Authenticate("secret_key"),
+    auth.RequireRoles("admin"),
+    auth.RequirePolicy(func(u *auth.UserClaims) bool {
+        return u.Attributes["department"] == "finance"
+    }),
+    auth.RequireMFA("totp_secret"),
+)
+```
+
+---
+
+## 📬 Email & SMS Notification Suite (`notify`)
+
+```go
+_ = notify.SendEmail(ctx, notify.EmailMessage{To: "user@example.com", Subject: "Welcome", Body: "Hello!"})
+_ = notify.SendSMS(ctx, notify.SMSMessage{ToPhone: "+15550192831", Text: "Your OTP is 123456"})
+```
+
+---
+
 ## 📊 Observability (Prometheus Metrics & Tracing)
 
 `goplusplus` includes built-in request metrics and a Prometheus output endpoint:
