@@ -265,11 +265,17 @@ cdnURL  := storage.GenerateCloudFrontURL("cdn.myapp.com", "logo.png")
 // 2. Zero-Config Embedded SQLite Database
 sqliteDB, _ := dbcore.NewSQLiteClient("app.db")
 
-// 3. Elasticsearch & OpenSearch
+// 3. Distributed Redis & L1 Memory Cache (Single-Flight Stampede Protection)
+redisCache := cache.NewRedisClient("redis://localhost:6379/0")
+val, _     := redisCache.GetOrSet(ctx, "user:101", 10*time.Minute, func() (any, error) {
+    return fetchUserFromDB(101)
+})
+
+// 4. Elasticsearch & OpenSearch
 esClient := search.NewElasticsearchClient(search.ESConfig{})
 _ = esClient.IndexDocument(ctx, "products", "prod_1", payload)
 
-// 4. Kafka & RabbitMQ Messaging
+// 5. Kafka & RabbitMQ Messaging
 kafkaWorker := queue.NewKafkaWorker([]string{"localhost:9092"}, "events")
 rabbitBus   := pubsub.NewRabbitMQBus("amqp://localhost:5672")
 ```
