@@ -30,6 +30,11 @@ func NewManager(defaultVersion string) *Manager {
 	}
 }
 
+// Middleware creates a package-level API versioning middleware for simple usage.
+func Middleware(defaultVersion string) gpp.HandlerFunc {
+	return NewManager(defaultVersion).Middleware()
+}
+
 // Deprecate marks an API version as deprecated with an RFC 8594 Sunset Date (e.g. "2027-01-01").
 func (m *Manager) Deprecate(version string, sunsetDate string) {
 	m.mu.Lock()
