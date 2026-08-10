@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+
+	"github.com/saifsilver/goplusplus/queue"
 )
 
 const abortIndex int8 = math.MaxInt8 / 2
@@ -282,6 +284,24 @@ func (c *Context) Async(fn func(c *Context) error) {
 			slog.Error("gpp: background async task error", slog.String("error", err.Error()))
 		}
 	}(cCopy)
+}
+
+// AsyncTask dispatches a background task with automatic retries on failure and persistent status tracking, returning a task ID.
+func (c *Context) AsyncTask(name string, fn func(c *Context) error) string {
+	cCopy := &Context{
+		Request: c.Request.Clone(context.Background()),
+		Writer:  c.Writer,
+		index:   c.index,
+		keys:    c.keys,
+	}
+	return queue.AsyncTask(name, 3, func(ctx context.Context) error {
+		return fn(cCopy)
+	})
+}
+
+// GetTaskStatus retrieves the status and retry details of a background task by ID.
+func (c *Context) GetTaskStatus(taskID string) (*queue.TaskInfo, bool) {
+	return queue.GetTaskStatus(taskID)
 }
 
 // SSE streams Server-Sent Events from a channel continuously.

@@ -252,6 +252,29 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## ⚡ Persistent Background Task Tracker & Auto-Retry Engine (`queue`)
+
+Dispatch tracked background tasks with automatic retries on failure and full status visibility:
+
+```go
+// 1. Dispatch tracked background task (returns task ID)
+app.POST("/api/v1/tasks/send-email", func(c *gpp.Context) error {
+    taskID := c.AsyncTask("send_welcome_email", func(c *gpp.Context) error {
+        return sendEmailSMTP() // Automatically retries up to 3 times on failure!
+    })
+    return c.JSON(http.StatusAccepted, gpp.H{"task_id": taskID})
+})
+
+// 2. Query task status anytime by ID
+app.GET("/api/v1/tasks/:id", func(c *gpp.Context) error {
+    taskInfo, _ := c.GetTaskStatus(c.Param("id"))
+    // Returns: task.Status ("PENDING"|"RUNNING"|"COMPLETED"|"FAILED"|"RETRYING"), Retries, LastError
+    return c.JSON(http.StatusOK, gpp.H{"task": taskInfo})
+})
+```
+
+---
+
 ## 📡 Real-Time WebSockets & Server-Sent Events (SSE) Suite (`realtime`)
 
 `goplusplus` includes zero-dependency support for real-time WebSocket messaging and Server-Sent Events (SSE):
