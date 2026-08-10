@@ -252,6 +252,31 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## 🔮 Probabilistic Data Structures & Cache Defense (`bloom`)
+
+High-performance Bloom Filters, HyperLogLog DAU counters, and Count-Min Sketch frequency estimators:
+
+```go
+// 1. Bloom Filter (Zero-False Negative Cache Penetration Defense)
+bloomFilter := bloom.NewFilter(10000, 0.01)
+bloomFilter.Add("usr_101")
+
+if !bloomFilter.MayContain(id) {
+    return gpp.ErrNotFound("User 100% does not exist in DB") // Blocks malicious DB attack!
+}
+
+// 2. HyperLogLog (Constant Memory Unique Visitor Counter)
+hll := bloom.NewHyperLogLog()
+hll.Add("user_ip_1")
+daus := hll.EstimateCardinality()
+
+// 3. Count-Min Sketch (Top-K Trending Frequency Estimator)
+cms := bloom.NewCountMinSketch()
+cms.Add("trending_topic", 1)
+```
+
+---
+
 ## 🔒 Universal Security & Authentication Engine (PASETO, JWT, Redis Sessions)
 
 `goplusplus` includes multi-platform security for Web and Mobile applications:
