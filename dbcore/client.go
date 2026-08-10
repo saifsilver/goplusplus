@@ -3,8 +3,7 @@ package dbcore
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
+	"sync"
 	"time"
 )
 

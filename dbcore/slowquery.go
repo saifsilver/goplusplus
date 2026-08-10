@@ -2,7 +2,6 @@ package dbcore
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"

@@ -206,11 +206,12 @@ func (c *Context) Validate(v any) error {
 		rules := strings.Split(tag, ",")
 		for _, rule := range rules {
 			rule = strings.TrimSpace(rule)
-			if rule == "required" {
+			switch rule {
+			case "required":
 				if fieldVal.IsZero() {
 					return ErrBadRequest(fmt.Sprintf("Field '%s' is required", field.Name))
 				}
-			} else if rule == "email" {
+			case "email":
 				str := fmt.Sprintf("%v", fieldVal.Interface())
 				if str != "" && (!strings.Contains(str, "@") || !strings.Contains(str, ".")) {
 					return ErrBadRequest(fmt.Sprintf("Field '%s' must be a valid email address", field.Name))
