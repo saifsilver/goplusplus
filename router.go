@@ -1,6 +1,7 @@
 package gpp
 
 import (
+	"embed"
 	"io/fs"
 	"net/http"
 	"path"
@@ -120,6 +121,29 @@ func (group *RouterGroup) StaticFS(relativePath string, fsys fs.FS) {
 	urlPattern := path.Join(relativePath, "*filepath")
 	group.GET(urlPattern, handler)
 	group.HEAD(urlPattern, handler)
+}
+
+// StaticEmbed mounts an embedded filesystem (embed.FS) with zero-boilerplate automatic subfolder resolution (dist, build, static, public) and SPA index.html fallback.
+func (group *RouterGroup) StaticEmbed(relativePath string, embedFS embed.FS, optionalSubDir ...string) {
+	var targetFS fs.FS = embedFS
+
+	if len(optionalSubDir) > 0 && optionalSubDir[0] != "" {
+		if sub, err := fs.Sub(embedFS, optionalSubDir[0]); err == nil {
+			targetFS = sub
+		}
+	} else {
+		// Auto-detect common frontend build output folders
+		for _, candidates := range []string{"dist", "build", "static", "public", "web/dist", "web/build"} {
+			if sub, err := fs.Sub(embedFS, candidates); err == nil {
+				if _, errCheck := sub.Open("index.html"); errCheck == nil {
+					targetFS = sub
+					break
+				}
+			}
+		}
+	}
+
+	group.StaticFS(relativePath, targetFS)
 }
 
 func (group *RouterGroup) combinePath(relativePath string) string {
