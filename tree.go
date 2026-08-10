@@ -196,8 +196,10 @@ walk:
 						end = len(path)
 					}
 					val := path[:end]
-					if unescaped, err := url.PathUnescape(val); err == nil {
-						val = unescaped
+					if strings.IndexByte(val, '%') != -1 {
+						if unescaped, err := url.PathUnescape(val); err == nil {
+							val = unescaped
+						}
 					}
 					if params != nil && len(n.paramNames) > len(*params) {
 						key := n.paramNames[len(*params)]
