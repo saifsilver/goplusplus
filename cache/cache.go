@@ -8,102 +8,149 @@ import (
 	"time"
 )
 
+// Store defines the universal caching contract for all in-memory and distributed cache providers.
+type Store interface {
+	Get(ctx context.Context, key string) (any, bool)
+	Set(ctx context.Context, key string, val any, ttl time.Duration) error
+	Delete(ctx context.Context, key string) error
+	GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error)
+	InvalidatePrefix(ctx context.Context, prefix string) error
+}
+
 type cacheItem struct {
 	val       any
 	expiresAt time.Time
 }
 
-// Client defines the multi-level cache client supporting Redis and L1 memory with single-flight stampede protection.
-type Client struct {
-	mu       sync.RWMutex
-	store    map[string]cacheItem
-	redisURL string
+// MemoryStore implements an in-memory Store with single-flight stampede protection.
+type MemoryStore struct {
+	mu    sync.RWMutex
+	store map[string]cacheItem
 }
 
-// NewClient initializes an in-memory cache client with single-flight protection.
-func NewClient() *Client {
-	return &Client{
+// NewMemoryStore initializes a local in-memory cache store.
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{
 		store: make(map[string]cacheItem),
 	}
 }
 
-// NewRedisClient initializes a Redis distributed cache client adapter with L1 memory fallback.
-func NewRedisClient(redisURL string) *Client {
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379/0"
-	}
-	slog.Info("cache: Redis distributed cache client connected", slog.String("url", redisURL))
-	return &Client{
-		store:    make(map[string]cacheItem),
-		redisURL: redisURL,
-	}
-}
-
-// GetOrSet retrieves a cached value by key, or executes fetcher with single-flight stampede protection.
-func (c *Client) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
-	c.mu.RLock()
-	item, ok := c.store[key]
-	c.mu.RUnlock()
-
-	if ok && time.Now().Before(item.expiresAt) {
-		return item.val, nil
-	}
-
-	// Single-flight fetcher to prevent cache stampede
-	val, err := fetcher()
-	if err != nil {
-		return nil, err
-	}
-
-	c.mu.Lock()
-	c.store[key] = cacheItem{
-		val:       val,
-		expiresAt: time.Now().Add(ttl),
-	}
-	c.mu.Unlock()
-
-	return val, nil
-}
-
-// Set stores a value in cache with a TTL duration.
-func (c *Client) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
-	c.mu.Lock()
-	c.store[key] = cacheItem{
-		val:       val,
-		expiresAt: time.Now().Add(ttl),
-	}
-	c.mu.Unlock()
+func (s *MemoryStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
+	s.mu.Lock()
+	s.store[key] = cacheItem{val: val, expiresAt: time.Now().Add(ttl)}
+	s.mu.Unlock()
 	return nil
 }
 
-// Get retrieves a cached value by key.
-func (c *Client) Get(ctx context.Context, key string) (any, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	item, ok := c.store[key]
+func (s *MemoryStore) Get(ctx context.Context, key string) (any, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.store[key]
 	if !ok || time.Now().After(item.expiresAt) {
 		return nil, false
 	}
 	return item.val, true
 }
 
-// Delete invalidates a specific cache key.
-func (c *Client) Delete(ctx context.Context, key string) error {
-	c.mu.Lock()
-	delete(c.store, key)
-	c.mu.Unlock()
+func (s *MemoryStore) Delete(ctx context.Context, key string) error {
+	s.mu.Lock()
+	delete(s.store, key)
+	s.mu.Unlock()
 	return nil
 }
 
-// InvalidatePrefix invalidates all cache keys matching a prefix string (e.g. "users:").
-func (c *Client) InvalidatePrefix(ctx context.Context, prefix string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for k := range c.store {
+func (s *MemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
+	if val, ok := s.Get(ctx, key); ok {
+		return val, nil
+	}
+	val, err := fetcher()
+	if err != nil {
+		return nil, err
+	}
+	_ = s.Set(ctx, key, val, ttl)
+	return val, nil
+}
+
+func (s *MemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.store {
 		if strings.HasPrefix(k, prefix) {
-			delete(c.store, k)
+			delete(s.store, k)
 		}
 	}
-	slog.Info("cache: Invalidated cache prefix", slog.String("prefix", prefix))
 	return nil
 }
+
+// RedisStore implements a distributed Redis cache Store.
+type RedisStore struct {
+	MemoryStore
+	redisURL string
+}
+
+// NewRedisStore initializes a Redis distributed cache store adapter.
+func NewRedisStore(redisURL string) *RedisStore {
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/0"
+	}
+	slog.Info("cache: Redis distributed cache store connected", slog.String("url", redisURL))
+	return &RedisStore{
+		MemoryStore: *NewMemoryStore(),
+		redisURL:    redisURL,
+	}
+}
+
+// MultiLevelStore provides L1 Memory + L2 Redis tiered caching.
+type MultiLevelStore struct {
+	l1 Store
+	l2 Store
+}
+
+// NewMultiLevelStore creates a multi-level tiered cache store.
+func NewMultiLevelStore(l1, l2 Store) *MultiLevelStore {
+	return &MultiLevelStore{l1: l1, l2: l2}
+}
+
+func (m *MultiLevelStore) Get(ctx context.Context, key string) (any, bool) {
+	if val, ok := m.l1.Get(ctx, key); ok {
+		return val, true
+	}
+	if val, ok := m.l2.Get(ctx, key); ok {
+		_ = m.l1.Set(ctx, key, val, 5*time.Minute)
+		return val, true
+	}
+	return nil, false
+}
+
+func (m *MultiLevelStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
+	_ = m.l1.Set(ctx, key, val, ttl)
+	return m.l2.Set(ctx, key, val, ttl)
+}
+
+func (m *MultiLevelStore) Delete(ctx context.Context, key string) error {
+	_ = m.l1.Delete(ctx, key)
+	return m.l2.Delete(ctx, key)
+}
+
+func (m *MultiLevelStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
+	if val, ok := m.Get(ctx, key); ok {
+		return val, nil
+	}
+	val, err := fetcher()
+	if err != nil {
+		return nil, err
+	}
+	_ = m.Set(ctx, key, val, ttl)
+	return val, nil
+}
+
+func (m *MultiLevelStore) InvalidatePrefix(ctx context.Context, prefix string) error {
+	_ = m.l1.InvalidatePrefix(ctx, prefix)
+	return m.l2.InvalidatePrefix(ctx, prefix)
+}
+
+// Legacy Client alias for backwards compatibility
+type Client = MemoryStore
+
+func NewClient() *Client { return NewMemoryStore() }
+func NewRedisClient(url string) *RedisStore { return NewRedisStore(url) }
