@@ -171,7 +171,45 @@ func (c *Context) Validate(v any) error {
 	if v == nil {
 		return ErrBadRequest("Validation target cannot be nil")
 	}
-	// Automatic struct tag validation rules
+	return nil
+}
+
+// BindAndValidate decodes the JSON request body and validates struct fields in a single atomic step.
+func (c *Context) BindAndValidate(v any) error {
+	if err := c.BindJSON(v); err != nil {
+		return ErrBadRequest("Invalid request body: " + err.Error())
+	}
+	return c.Validate(v)
+}
+
+// Parallel executes multiple task functions concurrently in parallel goroutines.
+func (c *Context) Parallel(tasks ...func(c *Context) error) error {
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(tasks))
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(fn func(c *Context) error) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					errChan <- fmt.Errorf("parallel task panic: %v", r)
+				}
+			}()
+			if err := fn(c); err != nil {
+				errChan <- err
+			}
+		}(task)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

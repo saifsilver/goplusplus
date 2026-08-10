@@ -48,6 +48,41 @@ func (c *Client) ExecIdempotent(ctx context.Context, query string, args ...any) 
 	return driverResult{}, nil
 }
 
+// ParallelTask defines a single SQL query execution payload for concurrent batch execution.
+type ParallelTask struct {
+	QueryName string
+	SQL       string
+	Args      []any
+}
+
+// ParallelQuery executes multiple database queries concurrently across replicas in parallel goroutines.
+func (c *Client) ParallelQuery(ctx context.Context, tasks ...ParallelTask) error {
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(tasks))
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(t ParallelTask) {
+			defer wg.Done()
+			taskCtx := WithQueryName(ctx, t.QueryName)
+			err := c.Query(taskCtx, t.SQL, nil, t.Args...)
+			if err != nil {
+				errChan <- err
+			}
+		}(task)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // QueryRow executes a single row read query, routing to replica (RO) or primary (RW).
 func (c *Client) QueryRow(ctx context.Context, query string, fn func(row *sql.Row) error, args ...any) error {
 	start := time.Now()
