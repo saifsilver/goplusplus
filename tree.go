@@ -34,40 +34,21 @@ const (
 )
 
 type node struct {
-	path       string
-	indices    string
-	wildChild  bool
-	nType      nodeType
-	children   []*node
-	handlers   HandlersChain
-	paramNames []string
+	path      string
+	indices   string
+	wildChild bool
+	nType     nodeType
+	paramName string
+	children  []*node
+	handlers  HandlersChain
 }
 
 func (n *node) addRoute(path string, handlers HandlersChain) {
 	fullPath := path
-	n.path = ""
-
-	// Extract parameter names from route template
-	var paramNames []string
-	searchPath := path
-	for {
-		i := strings.IndexAny(searchPath, ":*")
-		if i == -1 {
-			break
-		}
-		end := strings.IndexByte(searchPath[i:], '/')
-		if end == -1 {
-			paramNames = append(paramNames, searchPath[i+1:])
-			break
-		}
-		paramNames = append(paramNames, searchPath[i+1:i+end])
-		searchPath = searchPath[i+end:]
-	}
-
-	n.insertChild(fullPath, path, handlers, paramNames)
+	n.insertChild(fullPath, path, handlers)
 }
 
-func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramNames []string) {
+func (n *node) insertChild(fullPath, path string, handlers HandlersChain) {
 	for {
 		// Find longest common prefix
 		i := longestCommonPrefix(path, n.path)
@@ -75,13 +56,13 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramN
 		// Split node if prefix is smaller than n.path
 		if i < len(n.path) {
 			child := node{
-				path:       n.path[i:],
-				indices:    n.indices,
-				wildChild:  n.wildChild,
-				nType:      n.nType,
-				children:   n.children,
-				handlers:   n.handlers,
-				paramNames: n.paramNames,
+				path:      n.path[i:],
+				indices:   n.indices,
+				wildChild: n.wildChild,
+				nType:     n.nType,
+				paramName: n.paramName,
+				children:  n.children,
+				handlers:  n.handlers,
 			}
 
 			n.children = []*node{&child}
@@ -89,7 +70,7 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramN
 			n.path = path[:i]
 			n.handlers = nil
 			n.wildChild = false
-			n.paramNames = nil
+			n.paramName = ""
 			n.nType = nodeStatic
 		}
 
@@ -126,17 +107,20 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramN
 				// Find end of parameter
 				end := strings.IndexByte(path, '/')
 				var paramSegment string
+				var pName string
 				if end == -1 {
 					paramSegment = path
+					pName = path[1:]
 				} else {
 					paramSegment = path[:end]
+					pName = path[1:end]
 				}
 
 				child := &node{
 					path:      paramSegment,
 					nType:     childType,
+					paramName: pName,
 					handlers:  handlers,
-					paramNames: paramNames,
 				}
 
 				n.wildChild = true
@@ -144,19 +128,17 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramN
 
 				if end != -1 {
 					child.handlers = nil
-					child.paramNames = nil
 					subChild := &node{}
 					child.children = []*node{subChild}
-					subChild.insertChild(fullPath, path[end:], handlers, paramNames)
+					subChild.insertChild(fullPath, path[end:], handlers)
 				}
 				return
 			}
 
 			// Regular static child node
 			child := &node{
-				path:       path,
-				handlers:   handlers,
-				paramNames: paramNames,
+				path:     path,
+				handlers: handlers,
 			}
 			n.indices += string([]byte{c})
 			n.children = append(n.children, child)
@@ -165,7 +147,6 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain, paramN
 
 		// Exact path match reached
 		n.handlers = handlers
-		n.paramNames = paramNames
 		return
 	}
 }
@@ -201,9 +182,8 @@ walk:
 							val = unescaped
 						}
 					}
-					if params != nil && len(n.paramNames) > len(*params) {
-						key := n.paramNames[len(*params)]
-						*params = append(*params, Param{Key: key, Value: val})
+					if params != nil && n.paramName != "" {
+						*params = append(*params, Param{Key: n.paramName, Value: val})
 					}
 					if end < len(path) {
 						if len(n.children) > 0 {
@@ -216,12 +196,13 @@ walk:
 					return n.handlers
 				case nodeCatchAll:
 					val := path
-					if unescaped, err := url.PathUnescape(val); err == nil {
-						val = unescaped
+					if strings.IndexByte(val, '%') != -1 {
+						if unescaped, err := url.PathUnescape(val); err == nil {
+							val = unescaped
+						}
 					}
-					if params != nil && len(n.paramNames) > len(*params) {
-						key := n.paramNames[len(*params)]
-						*params = append(*params, Param{Key: key, Value: val})
+					if params != nil && n.paramName != "" {
+						*params = append(*params, Param{Key: n.paramName, Value: val})
 					}
 					return n.handlers
 				}
