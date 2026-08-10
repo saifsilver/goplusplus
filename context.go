@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -105,9 +106,14 @@ func (c *Context) AbortWithStatusJSON(statusCode int, payload any) error {
 	return c.JSON(statusCode, payload)
 }
 
-// Param retrieves a path parameter by name.
+// Param retrieves a path parameter by name (e.g. /users/:id -> c.Param("id")).
 func (c *Context) Param(key string) string {
 	return c.Params.Get(key)
+}
+
+// PathValue is an alias for Param, providing Go 1.22+ r.PathValue() compatibility.
+func (c *Context) PathValue(key string) string {
+	return c.Param(key)
 }
 
 // Query retrieves a URL query parameter by name.
@@ -121,6 +127,42 @@ func (c *Context) QueryDefault(key, defaultValue string) string {
 		return val
 	}
 	return defaultValue
+}
+
+// QueryInt retrieves a query parameter converted to integer with optional default fallback.
+func (c *Context) QueryInt(key string, defaultValue ...int) int {
+	valStr := c.Query(key)
+	if valStr == "" {
+		if len(defaultValue) > 0 {
+			return defaultValue[0]
+		}
+		return 0
+	}
+	if intVal, err := strconv.Atoi(valStr); err == nil {
+		return intVal
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return 0
+}
+
+// QueryBool retrieves a query parameter converted to boolean with optional default fallback.
+func (c *Context) QueryBool(key string, defaultValue ...bool) bool {
+	valStr := c.Query(key)
+	if valStr == "" {
+		if len(defaultValue) > 0 {
+			return defaultValue[0]
+		}
+		return false
+	}
+	if boolVal, err := strconv.ParseBool(valStr); err == nil {
+		return boolVal
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return false
 }
 
 // Set stores a key-value pair in the request context storage.
