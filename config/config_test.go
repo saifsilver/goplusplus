@@ -111,3 +111,39 @@ func TestHelpers(t *testing.T) {
 		t.Errorf("MaskSecret failed")
 	}
 }
+
+type InlineTagConfig struct {
+	Host     string `config:"APP_HOST,default=localhost"`
+	ApiKey   string `env:"API_KEY,required"`
+	Required string `required:"true"`
+}
+
+func TestAdvancedTagOptions(t *testing.T) {
+	// Missing required fields should error
+	var cfg InlineTagConfig
+	if err := Unmarshal(&cfg); err == nil {
+		t.Errorf("expected error for missing required fields, got nil")
+	}
+
+	os.Setenv("API_KEY", "secret-key")
+	os.Setenv("REQUIRED", "value")
+	defer func() {
+		os.Unsetenv("API_KEY")
+		os.Unsetenv("REQUIRED")
+	}()
+
+	var cfg2 InlineTagConfig
+	if err := Unmarshal(&cfg2); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg2.Host != "localhost" {
+		t.Errorf("expected Host 'localhost', got '%s'", cfg2.Host)
+	}
+	if cfg2.ApiKey != "secret-key" {
+		t.Errorf("expected ApiKey 'secret-key', got '%s'", cfg2.ApiKey)
+	}
+	if cfg2.Required != "value" {
+		t.Errorf("expected Required 'value', got '%s'", cfg2.Required)
+	}
+}
+

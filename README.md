@@ -29,7 +29,7 @@ With `goplusplus`, developers focus **exclusively on domain business logic and i
 ## 📦 Installation
 
 ```bash
-go get github.com/saifsilver/goplusplus@v1.1.0
+go get github.com/saifsilver/goplusplus@v1.2.0
 ```
 
 ---

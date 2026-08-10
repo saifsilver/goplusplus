@@ -171,7 +171,7 @@ func MustLoad[T any](filepath ...string) *T {
 	return cfg
 }
 
-// Unmarshal maps environment variables into a struct pointer using `env:"KEY"` tags or automatic SNAKE_CASE field names.
+// Unmarshal maps environment variables into a struct pointer using `env:"KEY"`, `config:"KEY"`, `default:"VALUE"`, `required:"true"` tags or automatic SNAKE_CASE field names.
 func Unmarshal(v any) error {
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Ptr || val.Elem().Kind() != reflect.Struct {
@@ -190,35 +190,69 @@ func Unmarshal(v any) error {
 			continue
 		}
 
-		envKey := fieldType.Tag.Get("env")
-		defaultVal := fieldType.Tag.Get("default")
+		tagStr := fieldType.Tag.Get("env")
+		if tagStr == "" {
+			tagStr = fieldType.Tag.Get("config")
+		}
+
+		var envKey string
+		var defaultVal string
+		var required bool
+
+		if tagStr != "" {
+			parts := strings.Split(tagStr, ",")
+			envKey = strings.TrimSpace(parts[0])
+			for _, opt := range parts[1:] {
+				opt = strings.TrimSpace(opt)
+				if strings.HasPrefix(opt, "default=") {
+					defaultVal = strings.TrimPrefix(opt, "default=")
+				} else if opt == "required" {
+					required = true
+				}
+			}
+		}
+
+		if defaultVal == "" {
+			defaultVal = fieldType.Tag.Get("default")
+		}
+		if !required {
+			if reqTag := fieldType.Tag.Get("required"); reqTag == "true" || reqTag == "1" {
+				required = true
+			}
+		}
 
 		var envVal string
 		if envKey != "" {
-			envVal = GetString(envKey, defaultVal)
+			envVal = GetString(envKey)
 		} else {
 			// Auto snake_case field mapping (e.g. JWTSecret -> JWT_SECRET, DBPath -> DB_PATH)
-			snakeKey := toSnakeCase(fieldType.Name)
-			envVal = GetString(snakeKey)
+			envKey = toSnakeCase(fieldType.Name)
+			envVal = GetString(envKey)
 			if envVal == "" {
 				upperKey := strings.ToUpper(fieldType.Name)
-				if upperKey != snakeKey {
+				if upperKey != envKey {
 					envVal = GetString(upperKey)
 				}
-			}
-			if envVal == "" && defaultVal != "" {
-				envVal = defaultVal
 			}
 		}
 
 		if envVal == "" {
+			envVal = defaultVal
+		}
+
+		if envVal == "" {
+			if required {
+				return fmt.Errorf("config: required field '%s' (env: '%s') is missing", fieldType.Name, envKey)
+			}
 			continue
 		}
 
 		if field.Type() == durationTyp {
-			if durVal, err := time.ParseDuration(envVal); err == nil {
-				field.Set(reflect.ValueOf(durVal))
+			durVal, err := time.ParseDuration(envVal)
+			if err != nil {
+				return fmt.Errorf("config: invalid duration for field '%s': %w", fieldType.Name, err)
 			}
+			field.Set(reflect.ValueOf(durVal))
 			continue
 		}
 
@@ -226,21 +260,29 @@ func Unmarshal(v any) error {
 		case reflect.String:
 			field.SetString(envVal)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			if intVal, err := strconv.ParseInt(envVal, 10, 64); err == nil {
-				field.SetInt(intVal)
+			intVal, err := strconv.ParseInt(envVal, 10, 64)
+			if err != nil {
+				return fmt.Errorf("config: invalid integer for field '%s': %w", fieldType.Name, err)
 			}
+			field.SetInt(intVal)
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			if uintVal, err := strconv.ParseUint(envVal, 10, 64); err == nil {
-				field.SetUint(uintVal)
+			uintVal, err := strconv.ParseUint(envVal, 10, 64)
+			if err != nil {
+				return fmt.Errorf("config: invalid unsigned integer for field '%s': %w", fieldType.Name, err)
 			}
+			field.SetUint(uintVal)
 		case reflect.Float32, reflect.Float64:
-			if floatVal, err := strconv.ParseFloat(envVal, 64); err == nil {
-				field.SetFloat(floatVal)
+			floatVal, err := strconv.ParseFloat(envVal, 64)
+			if err != nil {
+				return fmt.Errorf("config: invalid float for field '%s': %w", fieldType.Name, err)
 			}
+			field.SetFloat(floatVal)
 		case reflect.Bool:
-			if boolVal, err := strconv.ParseBool(envVal); err == nil {
-				field.SetBool(boolVal)
+			boolVal, err := strconv.ParseBool(envVal)
+			if err != nil {
+				return fmt.Errorf("config: invalid boolean for field '%s': %w", fieldType.Name, err)
 			}
+			field.SetBool(boolVal)
 		}
 	}
 	return nil
