@@ -1,6 +1,7 @@
 package gpp
 
 import (
+	"io/fs"
 	"net/http"
 	"path"
 	"strings"
@@ -90,6 +91,29 @@ func (group *RouterGroup) Any(relativePath string, handlers ...HandlerFunc) {
 func (group *RouterGroup) Static(relativePath, root string) {
 	handler := func(c *Context) error {
 		fileServer := http.StripPrefix(group.combinePath(relativePath), http.FileServer(http.Dir(root)))
+		fileServer.ServeHTTP(c.Writer, c.Request)
+		return nil
+	}
+	urlPattern := path.Join(relativePath, "*filepath")
+	group.GET(urlPattern, handler)
+	group.HEAD(urlPattern, handler)
+}
+
+// StaticFS serves embedded static files from an io/fs.FS filesystem (e.g. embed.FS) with SPA fallback routing to index.html.
+func (group *RouterGroup) StaticFS(relativePath string, fsys fs.FS) {
+	fileServer := http.FileServer(http.FS(fsys))
+	handler := func(c *Context) error {
+		reqPath := strings.TrimPrefix(c.Request.URL.Path, group.combinePath(relativePath))
+		if reqPath == "" || reqPath == "/" {
+			reqPath = "index.html"
+		}
+		f, err := fsys.Open(strings.TrimPrefix(reqPath, "/"))
+		if err != nil {
+			// SPA fallback routing to index.html for client-side React/Vite/Vue Router
+			c.Request.URL.Path = path.Join(group.combinePath(relativePath), "index.html")
+		} else {
+			_ = f.Close()
+		}
 		fileServer.ServeHTTP(c.Writer, c.Request)
 		return nil
 	}

@@ -157,3 +157,4 @@ adminGroup.Use(
 | **Auto-Swagger** | `app.GET("/swagger", app.AutoSwaggerUI())` |
 | **Auto-GraphQL** | `app.GET("/graphql", app.AutoGraphQLPlayground("/graphql"))` |
 | **K8s Health** | `app.GET("/healthz/readiness", healthChecker.Readiness())` |
+| **Embedded React SPA** | `app.StaticFS("/", distFS)` (with automatic `index.html` fallback) |

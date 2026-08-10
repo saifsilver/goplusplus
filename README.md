@@ -97,6 +97,32 @@ func main() {
 
 ---
 
+## ⚛️ Embedded React / Vite / Next.js Single-Page Application (SPA)
+
+`goplusplus` includes built-in support for serving embedded React/Vite/Vue frontend apps out of a single Go binary with automatic client-side SPA fallback routing to `index.html`:
+
+```go
+//go:embed all:dist
+var reactDistFS embed.FS
+
+func main() {
+    app := gpp.New()
+
+    // 1. API routes
+    app.GET("/api/v1/users", getUsersHandler)
+
+    // 2. SubFS for React dist folder
+    distFS, _ := fs.Sub(reactDistFS, "dist")
+
+    // 3. Serve embedded React app on "/" with automatic SPA React Router fallback
+    app.StaticFS("/", distFS)
+
+    app.Listen(":8080")
+}
+```
+
+---
+
 ## 🏛️ Modular Monolith & Microservices Architecture
 
 `go++` provides native support for **Modular Monoliths**. Each domain feature (e.g. `User`, `Order`, `Payment`) implements the simple `gpp.Module` interface:
