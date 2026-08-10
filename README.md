@@ -252,7 +252,40 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
-### 10. 🧱 Uber FX-Style Dependency Injection Container (`di`)
+## 🧪 Ergonomic E2E Integration Testing Suite (`gpptest`)
+
+Write 3-line E2E API integration tests without starting real network sockets:
+
+```go
+func TestCreateUser(t *testing.T) {
+    tester := gpptest.New(t, app)
+    res := tester.POST("/api/v1/users", gpp.H{"name": "Alice", "email": "alice@dev.com"})
+    res.AssertStatus(201)
+    res.AssertJSON("status", "created")
+}
+```
+
+---
+
+## ⚡ `cmd/gpp` CLI Code Generator
+
+Install the CLI tool to scaffold applications and domain modules in seconds:
+
+```bash
+# Install CLI
+go install github.com/saifsilver/goplusplus/cmd/gpp@latest
+
+# Scaffold new app
+gpp new myapp
+
+# Generate domain module
+gpp gen module order
+```
+
+---
+
+## 🧱 Dependency Injection & Lifecycle Hooks (`di`) — Uber FX-Style
+
 Constructor dependency injection container with startup and shutdown hooks:
 
 ```go
