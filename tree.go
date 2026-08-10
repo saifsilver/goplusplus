@@ -144,15 +144,46 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain) {
 			}
 
 			child := &node{
-				path:     staticSegment,
-				handlers: handlers,
+				path: staticSegment,
 			}
 			n.indices += string([]byte{c})
 			n.children = append(n.children, child)
 
 			if remainingPath != "" {
-				child.handlers = nil
-				child.insertChild(fullPath, remainingPath, handlers)
+				var childType nodeType = nodeParam
+				if remainingPath[0] == '*' {
+					childType = nodeCatchAll
+				}
+
+				end := strings.IndexByte(remainingPath, '/')
+				var paramSegment string
+				var pName string
+				if end == -1 {
+					paramSegment = remainingPath
+					pName = remainingPath[1:]
+				} else {
+					paramSegment = remainingPath[:end]
+					pName = remainingPath[1:end]
+				}
+
+				paramChild := &node{
+					path:      paramSegment,
+					nType:     childType,
+					paramName: pName,
+					handlers:  handlers,
+				}
+
+				child.wildChild = true
+				child.children = []*node{paramChild}
+
+				if end != -1 {
+					paramChild.handlers = nil
+					subChild := &node{}
+					paramChild.children = []*node{subChild}
+					subChild.insertChild(fullPath, remainingPath[end:], handlers)
+				}
+			} else {
+				child.handlers = handlers
 			}
 			return
 		}

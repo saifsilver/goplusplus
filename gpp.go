@@ -116,6 +116,25 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// OPTIONS preflight fallback for CORS global middleware
+	if req.Method == http.MethodOptions {
+		for _, methodRoot := range engine.trees {
+			if methodRoot != nil {
+				handlers := methodRoot.getValue(req.URL.Path, &c.Params)
+				if handlers != nil {
+					c.handlers = append(engine.RouterGroup.handlers, func(c *Context) error {
+						return c.Status(http.StatusNoContent)
+					})
+					if err := c.Next(); err != nil {
+						engine.ErrorHandler(c, err)
+					}
+					engine.pool.Put(c)
+					return
+				}
+			}
+		}
+	}
+
 	// Route not found
 	c.handlers = HandlersChain{engine.NotFoundHandler}
 	if err := c.Next(); err != nil {
