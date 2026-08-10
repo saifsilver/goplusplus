@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	gpp "github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/middleware"
@@ -26,11 +27,17 @@ func main() {
 		})
 	})
 
-	fmt.Println("🚀 Starting goplusplus High-Throughput Load Test Server on http://localhost:8080")
-	fmt.Println("   • Benchmark Endpoint: GET http://localhost:8080/api/v1/bench/100")
-	fmt.Println("   • Run ApacheBench (ab): ab -n 100000 -c 100 http://localhost:8080/api/v1/bench/100")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8089"
+	}
+	addr := ":" + port
 
-	if err := app.Listen(":8080"); err != nil {
+	fmt.Printf("🚀 Starting goplusplus High-Throughput Load Test Server on http://localhost:%s\n", port)
+	fmt.Printf("   • Benchmark Endpoint: GET http://localhost:%s/api/v1/bench/100\n", port)
+	fmt.Printf("   • Run ApacheBench (ab): ab -n 100000 -c 100 http://localhost:%s/api/v1/bench/100\n", port)
+
+	if err := app.Listen(addr); err != nil {
 		panic(err)
 	}
 }
