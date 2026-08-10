@@ -252,6 +252,30 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## ☁️ Cloud Infrastructure Suite (SQLite, S3, CloudFront, Elasticsearch, Kafka, RabbitMQ)
+
+`goplusplus` includes built-in driver adapters for enterprise cloud services:
+
+```go
+// 1. AWS S3 & CloudFront CDN
+s3Client := storage.NewS3Client(storage.S3Config{Bucket: "app-assets", Region: "us-east-1"})
+s3URL, _ := s3Client.Upload(ctx, "logo.png", data, "image/png")
+cdnURL  := storage.GenerateCloudFrontURL("cdn.myapp.com", "logo.png")
+
+// 2. Zero-Config Embedded SQLite Database
+sqliteDB, _ := dbcore.NewSQLiteClient("app.db")
+
+// 3. Elasticsearch & OpenSearch
+esClient := search.NewElasticsearchClient(search.ESConfig{})
+_ = esClient.IndexDocument(ctx, "products", "prod_1", payload)
+
+// 4. Kafka & RabbitMQ Messaging
+kafkaWorker := queue.NewKafkaWorker([]string{"localhost:9092"}, "events")
+rabbitBus   := pubsub.NewRabbitMQBus("amqp://localhost:5672")
+```
+
+---
+
 ## 🧪 Ergonomic E2E Integration Testing Suite (`gpptest`)
 
 Write 3-line E2E API integration tests without starting real network sockets:
