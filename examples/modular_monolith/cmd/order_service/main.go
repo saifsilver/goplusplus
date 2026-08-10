@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"go++"
-	"go++/examples/modular_monolith/modules/order"
-	"go++/middleware"
+	"github.com/saifsilver/goplusplus"
+	"github.com/saifsilver/goplusplus/examples/modular_monolith/modules/order"
+	"github.com/saifsilver/goplusplus/middleware"
 )
 
 func main() {

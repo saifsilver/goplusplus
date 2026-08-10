@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"go++"
+	"github.com/saifsilver/goplusplus"
 )
 
 // responseWriterInterceptor intercepts status codes for logging.

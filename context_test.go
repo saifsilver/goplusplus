@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go++"
+	"github.com/saifsilver/goplusplus"
 )
 
 type samplePayload struct {

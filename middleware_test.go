@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"go++"
-	"go++/middleware"
+	"github.com/saifsilver/goplusplus"
+	"github.com/saifsilver/goplusplus/middleware"
 )
 
 func TestSecurityMiddleware(t *testing.T) {

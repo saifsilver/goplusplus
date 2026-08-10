@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"go++"
+	"github.com/saifsilver/goplusplus"
 )
 
 // Timeout returns middleware that sets a context timeout for each request.

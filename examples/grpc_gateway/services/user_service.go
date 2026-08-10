@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"go++/examples/grpc_gateway/proto"
+	"github.com/saifsilver/goplusplus/examples/grpc_gateway/proto"
 )
 
 // InMemUserService implements UserServiceClient for Modular Monolith deployment mode (Direct In-Memory calls).

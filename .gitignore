@@ -1,3 +1,17 @@
+# Build caches and temporary files
 .cache/
-secure_api
+.tmp/
+.gopath/
+
+# Binary outputs
 basic
+secure_api
+monolith
+user_service
+order_service
+gateway
+multi_protocol
+
+# OS / Editor files
+.DS_Store
+*.png

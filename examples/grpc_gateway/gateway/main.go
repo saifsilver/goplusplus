@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os"
 
-	"go++"
-	"go++/examples/grpc_gateway/proto"
-	"go++/examples/grpc_gateway/services"
-	"go++/middleware"
+	"github.com/saifsilver/goplusplus"
+	"github.com/saifsilver/goplusplus/examples/grpc_gateway/proto"
+	"github.com/saifsilver/goplusplus/examples/grpc_gateway/services"
+	"github.com/saifsilver/goplusplus/middleware"
 )
 
 // GatewayServer defines the HTTP API Gateway instance wrapping a UserServiceClient instance.

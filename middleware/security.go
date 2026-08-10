@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"go++"
+	"github.com/saifsilver/goplusplus"
 )
 
 // SecurityConfig holds configuration options for HTTP security headers.

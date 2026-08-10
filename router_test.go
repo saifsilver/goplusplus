@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go++"
+	"github.com/saifsilver/goplusplus"
 )
 
 func TestRouterStaticRoute(t *testing.T) {

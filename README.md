@@ -18,13 +18,54 @@
 
 ---
 
-## 📦 Installation
+## 📦 How to Add `go++` to Any Project
 
-Add `go++` to your Go project as a package:
+### Method 1: Standard Remote Import (GitHub)
+
+Publish your `go++` repository to GitHub (`github.com/your-username/go++`), then in any project directory run:
 
 ```bash
-go get go++
+go get github.com/your-username/go++
 ```
+
+In your application `main.go`:
+```go
+import (
+    "github.com/your-username/go++"
+    "github.com/your-username/go++/middleware"
+)
+```
+
+---
+
+### Method 2: Local Filesystem Link (`replace` directive in `go.mod`)
+
+If `go++` lives locally on your disk (e.g., `/path/to/go++`) and you want to use it in a separate app project without publishing yet:
+
+1. Open your app's `go.mod`:
+```go
+module my-app
+
+go 1.26
+
+require github.com/saifsulaiman/go++ v0.0.0
+
+replace github.com/saifsulaiman/go++ => /Users/saifsulaiman/Documents/websites/go++
+```
+
+2. Run `go mod tidy` in your app folder. Go will link directly to your local `go++` source files!
+
+---
+
+### Method 3: Go Workspaces (`go.work`)
+
+For multi-repo or monorepo development, initialize a Go workspace:
+
+```bash
+go work init ./path/to/go++ ./path/to/my-app
+```
+
+Now Go automatically links `go++` to `my-app` locally!
 
 ---
 
@@ -89,6 +130,46 @@ app := gpp.New()
 app.RegisterModule("/orders", orderModule.New())
 
 app.Listen(":8082")
+```
+
+---
+
+## 📄 Swagger / OpenAPI Interactive Documentation UI
+
+`go++` includes built-in Swagger UI rendering for your API specs:
+
+```go
+app.GET("/swagger", middleware.SwaggerUI(openAPISpecJSON))
+```
+
+Accessing `http://localhost:8080/swagger` in your browser opens an interactive Swagger UI dashboard allowing full API exploration and testing.
+
+---
+
+## 📊 GraphQL Engine & Interactive Playground
+
+`go++` supports GraphQL queries and mutations alongside an interactive Playground web UI:
+
+```go
+// 1. GraphQL Playground Web UI
+app.GET("/graphql", middleware.GraphQLPlayground("/graphql"))
+
+// 2. GraphQL Query Execution Engine
+app.POST("/graphql", middleware.GraphQLHandler(func(query string, vars map[string]any) (any, error) {
+    return gpp.H{"user": gpp.H{"id": "42", "name": "Alex"}}, nil
+}))
+```
+
+Accessing `http://localhost:8080/graphql` in your browser launches the GraphQL Playground IDE.
+
+---
+
+## ⚡ gRPC Protocol Multiplexing
+
+`go++` supports gRPC HTTP/2 multiplexing directly alongside standard REST endpoints:
+
+```go
+app.Use(middleware.GRPCMultiplex(grpcServerHandler))
 ```
 
 ---
