@@ -71,7 +71,7 @@ func main() {
 		_ = eventBus.Publish(reqCtx, "lead.created", gpp.H{"lead_id": "lead_99"})
 
 		// Search docs
-		results, _ := searchEngine.Search(reqCtx, "leads", "sales", 10)
+		results, _ := searchEngine.SearchKeyword(reqCtx, "leads", "sales")
 
 		return c.JSON(http.StatusOK, gpp.H{
 			"status":  "success",

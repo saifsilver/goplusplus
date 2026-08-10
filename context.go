@@ -1,10 +1,12 @@
 package gpp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"reflect"
@@ -259,6 +261,27 @@ func (c *Context) Parallel(tasks ...func(c *Context) error) error {
 		}
 	}
 	return nil
+}
+
+// Async dispatches a non-blocking background task in a detached goroutine with panic safety.
+func (c *Context) Async(fn func(c *Context) error) {
+	cCopy := &Context{
+		Request: c.Request.Clone(context.Background()),
+		Writer:  c.Writer,
+		index:   c.index,
+		keys:    c.keys,
+	}
+
+	go func(ctx *Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("gpp: background async task panic", slog.Any("panic", r))
+			}
+		}()
+		if err := fn(ctx); err != nil {
+			slog.Error("gpp: background async task error", slog.String("error", err.Error()))
+		}
+	}(cCopy)
 }
 
 // SSE streams Server-Sent Events from a channel continuously.
