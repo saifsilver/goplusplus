@@ -93,6 +93,31 @@ app.Listen(":8082")
 
 ---
 
+## 🌐 HTTP Gateway -> gRPC & Dual-Mode Architecture
+
+`go++` operates seamlessly as an **HTTP API Gateway** converting external HTTP/REST traffic into internal gRPC calls (or direct in-memory calls in Monolith mode):
+
+```
+Clients (Web/Mobile) ──[HTTP/REST]──> go++ Gateway ──┬──[In-Memory (0ms)]──> Monolith Modules
+                                                    └──[gRPC / HTTP2]────> Microservices
+```
+
+### Gateway Implementation Example:
+
+```go
+// Gateway handler delegating to UserServiceClient (In-Memory or gRPC)
+func (gw *GatewayServer) handleGetUser(c *gpp.Context) error {
+    id := c.Param("id")
+    user, err := gw.userClient.GetUser(c.Request.Context(), id)
+    if err != nil {
+        return gpp.NewHTTPError(http.StatusNotFound, err.Error())
+    }
+    return c.JSON(http.StatusOK, gpp.H{"data": user})
+}
+```
+
+---
+
 ## 🔒 Security Middleware Suite
 
 `go++` comes bundled with essential production security features in `go++/middleware`:
