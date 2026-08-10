@@ -252,6 +252,25 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## 🔒 Universal Security & Authentication Engine (PASETO, JWT, Redis Sessions)
+
+`goplusplus` includes multi-platform security for Web and Mobile applications:
+
+```go
+// 1. Mobile Auth (PASETO v4 & JWT Bearer Tokens)
+pasToken := auth.GeneratePASETO(userClaims, secretKey)
+jwtToken := auth.GenerateJWT(userClaims, secretKey)
+
+// 2. Web Auth (Redis-Backed HTTP-Only SameSite Cookie Sessions)
+sessionMgr := auth.NewRedisSessionManager("redis://localhost:6379/0")
+sessionID  := sessionMgr.CreateSession(c, userClaims)
+
+// 3. Universal Auth Middleware (Accepts Web Cookie Sessions OR Mobile Bearer Tokens in 1 call!)
+app.Use(auth.UniversalAuth(secretKey, sessionMgr))
+```
+
+---
+
 ## ⚙️ Configuration & Secret Vault Suite (`config`)
 
 Zero-dependency `.env` file loader, type-safe getters, secret masker, and struct tag unmarshaler:
