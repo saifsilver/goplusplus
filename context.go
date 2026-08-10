@@ -82,6 +82,19 @@ func (c *Context) IsAborted() bool {
 	return c.aborted
 }
 
+// IsCancelled returns true if the client closed the browser connection or cancelled the request.
+func (c *Context) IsCancelled() bool {
+	if c.Request == nil || c.Request.Context() == nil {
+		return false
+	}
+	select {
+	case <-c.Request.Context().Done():
+		return true
+	default:
+		return false
+	}
+}
+
 // AbortWithStatusJSON aborts execution and writes a JSON error payload immediately.
 func (c *Context) AbortWithStatusJSON(statusCode int, payload any) error {
 	c.Abort()
