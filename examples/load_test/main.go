@@ -8,7 +8,7 @@ import (
 	gpp "github.com/saifsilver/goplusplus"
 )
 
-var staticJSONResponse = []byte(`{"status":"ok","engine":"goplusplus","throughput":"150k_target"}`)
+var staticJSONResponse = []byte(`{"status":"ok","engine":"goplusplus","throughput":"160k_target"}`)
 
 func main() {
 	app := gpp.New()
@@ -24,7 +24,7 @@ func main() {
 	}
 	addr := ":" + port
 
-	fmt.Printf("🚀 Starting goplusplus 150k+ RPS Optimized Load Test Server on http://localhost:%s\n", port)
+	fmt.Printf("🚀 Starting goplusplus 160k+ RPS High-Throughput Load Test Server on http://localhost:%s\n", port)
 	fmt.Printf("   • Benchmark Endpoint: GET http://localhost:%s/api/v1/bench/100\n", port)
 	fmt.Printf("   • Run ApacheBench (ab): ab -n 100000 -c 100 -k http://localhost:%s/api/v1/bench/100\n", port)
 

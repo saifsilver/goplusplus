@@ -136,12 +136,24 @@ func (n *node) insertChild(fullPath, path string, handlers HandlersChain) {
 			}
 
 			// Regular static child node
+			staticSegment := path
+			var remainingPath string
+			if pIdx := strings.IndexAny(path, ":*"); pIdx != -1 {
+				staticSegment = path[:pIdx]
+				remainingPath = path[pIdx:]
+			}
+
 			child := &node{
-				path:     path,
+				path:     staticSegment,
 				handlers: handlers,
 			}
 			n.indices += string([]byte{c})
 			n.children = append(n.children, child)
+
+			if remainingPath != "" {
+				child.handlers = nil
+				child.insertChild(fullPath, remainingPath, handlers)
+			}
 			return
 		}
 
