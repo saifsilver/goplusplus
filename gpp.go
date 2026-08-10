@@ -122,8 +122,9 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			if methodRoot != nil {
 				handlers := methodRoot.getValue(req.URL.Path, &c.Params)
 				if handlers != nil {
-					c.handlers = append(engine.RouterGroup.handlers, func(c *Context) error {
-						return c.Status(http.StatusNoContent)
+					c.handlers = append(engine.RouterGroup.middlewares, func(c *Context) error {
+						c.Status(http.StatusNoContent)
+						return nil
 					})
 					if err := c.Next(); err != nil {
 						engine.ErrorHandler(c, err)
