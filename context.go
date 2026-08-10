@@ -261,6 +261,36 @@ func (c *Context) Parallel(tasks ...func(c *Context) error) error {
 	return nil
 }
 
+// SSE streams Server-Sent Events from a channel continuously.
+func (c *Context) SSE(eventChan <-chan any) error {
+	c.SetHeader("Content-Type", "text/event-stream")
+	c.SetHeader("Cache-Control", "no-cache")
+	c.SetHeader("Connection", "keep-alive")
+	c.Status(http.StatusOK)
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return nil
+		case item, open := <-eventChan:
+			if !open {
+				return nil
+			}
+			dataBytes, _ := json.Marshal(item)
+			payload := fmt.Sprintf("data: %s\n\n", string(dataBytes))
+			_, _ = c.Writer.Write([]byte(payload))
+			if ok && flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
+}
+
 // Body reads the raw bytes from the request body.
 func (c *Context) Body() ([]byte, error) {
 	if c.Request.Body == nil {

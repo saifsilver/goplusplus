@@ -173,6 +173,16 @@ func defaultUserClaims() *UserClaims {
 	}
 }
 
+// GetUser extracts active UserClaims from the context.
+func GetUser(c *gpp.Context) (*UserClaims, bool) {
+	if val, ok := c.Get("user"); ok {
+		if claims, ok := val.(*UserClaims); ok {
+			return claims, true
+		}
+	}
+	return nil, false
+}
+
 // RequireRoles enforces Role-Based Access Control (RBAC).
 func RequireRoles(requiredRoles ...string) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {

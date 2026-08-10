@@ -51,6 +51,10 @@ func (e *InMemSearchEngine) SearchKeyword(ctx context.Context, indexName, query 
 	return results, nil
 }
 
+func (e *InMemSearchEngine) Search(ctx context.Context, query string) ([]map[string]any, error) {
+	return e.SearchKeyword(ctx, "default", query)
+}
+
 // Legacy Engine alias for backwards compatibility
 type Client = InMemSearchEngine
 

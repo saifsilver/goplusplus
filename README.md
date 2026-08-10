@@ -252,6 +252,33 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
+## 📡 Real-Time WebSockets & Server-Sent Events (SSE) Suite (`realtime`)
+
+`goplusplus` includes zero-dependency support for real-time WebSocket messaging and Server-Sent Events (SSE):
+
+```go
+// 1. Server-Sent Events (SSE) Live Stream
+app.GET("/api/v1/sse", func(c *gpp.Context) error {
+    eventChan := make(chan any)
+    go func() {
+        eventChan <- realtime.SSEEvent{Event: "notice", Data: "Live Update!"}
+    }()
+    return realtime.StreamSSE(c, eventChan)
+})
+
+// 2. WebSocket Real-Time Upgrade
+app.GET("/api/v1/ws", func(c *gpp.Context) error {
+    conn, err := realtime.Upgrade(c)
+    if err != nil { return err }
+    defer conn.Close()
+
+    msg, _ := conn.ReadMessage()
+    return conn.WriteMessage("Echo: " + msg)
+})
+```
+
+---
+
 ## 🔮 Probabilistic Data Structures & Cache Defense (`bloom`)
 
 High-performance Bloom Filters, HyperLogLog DAU counters, and Count-Min Sketch frequency estimators:
