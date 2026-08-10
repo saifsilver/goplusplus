@@ -18,7 +18,7 @@ func BenchmarkRouterStatic(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		app.ServeHTTP(rec, req)
 	}
 }
@@ -36,7 +36,7 @@ func BenchmarkRouterParam(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		app.ServeHTTP(rec, req)
 	}
 }
