@@ -8,6 +8,19 @@
 
 ---
 
+## 🎯 Developer Philosophy: 90% Business Logic, 10% Infrastructure Code
+
+With `goplusplus`, developers focus **exclusively on domain business logic and infrastructure configuration**. Everything else is handled efficiently by the framework:
+
+- ❌ **No Manual Routing & Parameter Parsing**: High-speed Radix tree router handles static, parameter, and wildcard routes.
+- ❌ **No Manual Data Binding or Validation**: `c.BindAndValidate(&struct)` decodes JSON AND validates struct tags in 1 atomic step.
+- ❌ **No Manual Security Headers, CORS or Rate Limits**: OWASP headers, CORS preflight, panic recovery, and thread-safe rate limiting work out-of-the-box.
+- ❌ **No Manual Error Formatting**: Errors automatically serialize into standard RFC 7807 Problem Details JSON.
+- ❌ **No Manual OpenAPI / GraphQL / gRPC Spec Writing**: Dynamic auto-generators serve Swagger UI (`/swagger`) and GraphQL Playground (`/graphql`) automatically.
+- ❌ **No Manual Distributed Tracing or Metrics Wiring**: Prometheus `/metrics` and W3C `X-Trace-ID` tracing propagate automatically.
+
+---
+
 ## ⚡ Highlights
 
 - **⚡ Blazing Fast**: Custom Radix Tree router with zero-alloc parameter lookup and `sync.Pool` context pooling.
