@@ -97,6 +97,67 @@ func main() {
 
 ---
 
+## 🧱 Dependency Injection & Lifecycle Hooks (`di`) — Uber FX-Style
+
+`goplusplus` includes a constructor dependency injection container with startup and shutdown hooks:
+
+```go
+container := di.New()
+
+container.OnStart(func() error {
+    log.Println("Database connection pool initialized")
+    return nil
+})
+
+_ = container.Start()
+defer func() { _ = container.Stop() }()
+```
+
+---
+
+## 🛡️ Hyper-Scale Resilience Suite (`resilience`) — Circuit Breaker & Adaptive Limiter
+
+Protect downstream services from cascading failure and sudden 100x traffic spikes:
+
+```go
+// 1. Circuit Breaker
+cb := resilience.NewCircuitBreaker(resilience.CircuitBreakerConfig{
+    FailureThreshold: 5,
+    ResetTimeout:     10 * time.Second,
+})
+
+err := cb.Execute(func() error {
+    return callExternalPaymentAPI()
+})
+
+// 2. Adaptive Concurrency Limiter (Little's Law)
+app.Use(resilience.NewAdaptiveLimiter(1000).Middleware())
+```
+
+---
+
+## 🔄 Saga Distributed Transactions (`saga`) — Uber Cadence-Style
+
+Manage multi-microservice transactions with automatic reverse compensation on failure:
+
+```go
+sagaCoord := saga.NewCoordinator()
+
+sagaCoord.AddStep("reserve_stock",
+    func(ctx context.Context) error { return reserveStock() },
+    func(ctx context.Context) error { return releaseStock() }, // Auto-compensation on error!
+)
+
+sagaCoord.AddStep("charge_payment",
+    func(ctx context.Context) error { return chargePayment() },
+    func(ctx context.Context) error { return refundPayment() },
+)
+
+err := sagaCoord.Execute(ctx)
+```
+
+---
+
 ## ⚛️ Embedded React / Vite / Next.js Single-Page Application (SPA)
 
 `goplusplus` includes built-in support for serving embedded React/Vite/Vue frontend apps out of a single Go binary with automatic client-side SPA fallback routing to `index.html`:
