@@ -35,10 +35,12 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("🚀 goplusplus (gpp) CLI Tool v1.0.0")
+	fmt.Println("🚀 goplusplus (gpp) CLI Tool v1.5.0")
 	fmt.Println("Usage:")
 	fmt.Println("  gpp new <app_name>     - Scaffold a production-ready goplusplus application")
 	fmt.Println("  gpp gen module <name>  - Generate a new domain module in modules/<name>")
+	fmt.Println("  gpp migrate            - Run database migrations on binary app")
+	fmt.Println("  gpp seed               - Seed database with fake data")
 	fmt.Println("  gpp version            - Display framework version")
 }
 

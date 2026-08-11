@@ -157,6 +157,7 @@ adminGroup.Use(
 | **Singleflight Deduplication** | `app.Use(middleware.Singleflight())` |
 | **Auto DB Migrations** | `dbcore.AutoMigrate(ctx, db, migrations...)` |
 | **DB Seeder & Faker** | `seed.Run(ctx, db, seed.Plan{Table: "users", Count: 50, Factory: ...})` |
+| **Binary CLI Flag Handler** | `app.HandleCLI(gpp.CLIOptions{Client: db, Migrations: ..., SeedPlans: ...})` |
 | **Offset Pagination** | `c.Paginate(200, items, page, limit, total)` |
 | **Cursor Pagination** | `c.PaginateCursor(200, items, nextCursor, hasMore, limit)` |
 | **Ephemeral Session Pagination** | `dbcore.MaterializePagination(ctx, db, query, 10*time.Minute)` |

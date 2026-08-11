@@ -8,13 +8,25 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/saifsilver/goplusplus/dbcore"
+	"github.com/saifsilver/goplusplus/dbcore/seed"
 )
 
 // Version is the current release version of the goplusplus framework.
-const Version = "v1.2.0"
+const Version = "v1.4.4"
+
+// CLIOptions defines configuration for application binary CLI flags.
+type CLIOptions struct {
+	Client     *dbcore.Client
+	Migrations []dbcore.Migration
+	SeedPlans  []seed.Plan
+	Args       []string // Optional override args for testing (defaults to os.Args if empty)
+}
 
 // Module defines the contract for self-contained domain modules in a modular monolith.
 type Module interface {
@@ -96,6 +108,57 @@ func (engine *Engine) RegisterModules(modules ...Module) {
 	for _, m := range modules {
 		engine.RegisterModule("", m)
 	}
+}
+
+// HandleCLI inspects binary CLI flags (e.g. ./myapp migrate, ./myapp seed, ./myapp migrate:fresh).
+// If a CLI flag is detected, it executes the target database task and returns true.
+func (engine *Engine) HandleCLI(opts CLIOptions) bool {
+	args := os.Args
+	if len(opts.Args) > 0 {
+		args = opts.Args
+	}
+
+	if len(args) < 2 {
+		return false
+	}
+
+	arg := strings.ToLower(args[1])
+	ctx := context.Background()
+
+	switch arg {
+	case "migrate", "-migrate", "--migrate":
+		slog.Info("gpp: Executing binary CLI database migrations...")
+		if err := dbcore.AutoMigrate(ctx, opts.Client, opts.Migrations...); err != nil {
+			slog.Error("gpp: Binary CLI Migration error", slog.String("error", err.Error()))
+			return true
+		}
+		slog.Info("gpp: Binary CLI Migrations completed successfully!")
+		return true
+
+	case "seed", "-seed", "--seed":
+		slog.Info("gpp: Executing binary CLI database seeders...")
+		if err := seed.Run(ctx, opts.Client, opts.SeedPlans...); err != nil {
+			slog.Error("gpp: Binary CLI Seeding error", slog.String("error", err.Error()))
+			return true
+		}
+		slog.Info("gpp: Binary CLI Database Seeding completed successfully!")
+		return true
+
+	case "migrate:fresh", "-migrate:fresh", "-migrate-fresh":
+		slog.Info("gpp: Executing binary CLI Fresh Migration & Seeding...")
+		if err := dbcore.AutoMigrate(ctx, opts.Client, opts.Migrations...); err != nil {
+			slog.Error("gpp: Binary CLI Migration error", slog.String("error", err.Error()))
+			return true
+		}
+		if err := seed.Run(ctx, opts.Client, opts.SeedPlans...); err != nil {
+			slog.Error("gpp: Binary CLI Seeding error", slog.String("error", err.Error()))
+			return true
+		}
+		slog.Info("gpp: Binary CLI Fresh Migration & Seeding completed successfully!")
+		return true
+	}
+
+	return false
 }
 
 // ServeHTTP implements the standard net/http.Handler interface for zero-alloc request processing.
