@@ -7,12 +7,21 @@ import (
 
 // ProblemDetails implements the RFC 7807 standard specification for HTTP API Problem Details.
 type ProblemDetails struct {
-	Type     string `json:"type"`
-	Title    string `json:"title"`
-	Status   int    `json:"status"`
-	Detail   string `json:"detail"`
-	Instance string `json:"instance,omitempty"`
-	TraceID  string `json:"trace_id,omitempty"`
+	Type     string           `json:"type"`
+	Title    string           `json:"title"`
+	Status   int              `json:"status"`
+	Detail   string           `json:"detail"`
+	Instance string           `json:"instance,omitempty"`
+	TraceID  string           `json:"trace_id,omitempty"`
+	Errors   []FieldViolation `json:"errors,omitempty"`
+}
+
+// FieldViolation is a machine-readable request validation failure. Values are
+// intentionally excluded to avoid exposing passwords, tokens, or personal data.
+type FieldViolation struct {
+	Field   string `json:"field"`
+	Rule    string `json:"rule"`
+	Message string `json:"message"`
 }
 
 // Error implements standard Go error interface.
@@ -37,6 +46,17 @@ func ErrBadRequest(detail string) *ProblemDetails {
 		Title:  "Bad Request",
 		Status: http.StatusBadRequest,
 		Detail: detail,
+	}
+}
+
+// ErrValidation creates a structured RFC 7807 validation response.
+func ErrValidation(violations []FieldViolation) *ProblemDetails {
+	return &ProblemDetails{
+		Type:   "https://goplusplus.dev/errors/validation",
+		Title:  "Request validation failed",
+		Status: http.StatusBadRequest,
+		Detail: "One or more fields are invalid",
+		Errors: append([]FieldViolation(nil), violations...),
 	}
 }
 
@@ -67,6 +87,14 @@ func ErrConflict(detail string) *ProblemDetails {
 		Title:  "Resource Conflict",
 		Status: http.StatusConflict,
 		Detail: detail,
+	}
+}
+
+// ErrRequestTimeout creates an RFC 7807 504 Gateway Timeout error.
+func ErrRequestTimeout(detail string) *ProblemDetails {
+	return &ProblemDetails{
+		Type: "https://goplusplus.dev/errors/request-timeout", Title: "Request Timeout",
+		Status: http.StatusGatewayTimeout, Detail: detail,
 	}
 }
 

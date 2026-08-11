@@ -15,11 +15,15 @@ func newValidationViolation(path string, value reflect.Value, rule validationRul
 }
 
 func formatValidationError(violation *validationViolation) string {
+	return fmt.Sprintf("Field '%s' %s", violation.field, validationRuleMessage(violation))
+}
+
+func validationRuleMessage(violation *validationViolation) string {
 	switch violation.rule {
 	case "required", "required_if", "required_unless", "required_with", "required_with_all", "required_without", "required_without_all":
-		return fmt.Sprintf("Field '%s' is required", violation.field)
+		return "is required"
 	case "email":
-		return fmt.Sprintf("Field '%s' must be a valid email address", violation.field)
+		return "must be a valid email address"
 	case "min":
 		return formatMinimumError(violation)
 	case "max":
@@ -27,45 +31,45 @@ func formatValidationError(violation *validationViolation) string {
 	case "len":
 		return formatLengthError(violation)
 	case "oneof":
-		return fmt.Sprintf("Field '%s' must be one of [%s]", violation.field, violation.param)
+		return fmt.Sprintf("must be one of [%s]", violation.param)
 	}
 
 	rule := violation.rule
 	if violation.param != "" {
 		rule += "=" + violation.param
 	}
-	return fmt.Sprintf("Field '%s' failed validation rule '%s'", violation.field, rule)
+	return fmt.Sprintf("failed validation rule '%s'", rule)
 }
 
 func formatMinimumError(violation *validationViolation) string {
 	switch violation.kind {
 	case reflect.String:
-		return fmt.Sprintf("Field '%s' must contain at least %s characters", violation.field, violation.param)
+		return fmt.Sprintf("must contain at least %s characters", violation.param)
 	case reflect.Array, reflect.Map, reflect.Slice:
-		return fmt.Sprintf("Field '%s' must contain at least %s items", violation.field, violation.param)
+		return fmt.Sprintf("must contain at least %s items", violation.param)
 	default:
-		return fmt.Sprintf("Field '%s' must be at least %s", violation.field, violation.param)
+		return fmt.Sprintf("must be at least %s", violation.param)
 	}
 }
 
 func formatMaximumError(violation *validationViolation) string {
 	switch violation.kind {
 	case reflect.String:
-		return fmt.Sprintf("Field '%s' must contain at most %s characters", violation.field, violation.param)
+		return fmt.Sprintf("must contain at most %s characters", violation.param)
 	case reflect.Array, reflect.Map, reflect.Slice:
-		return fmt.Sprintf("Field '%s' must contain at most %s items", violation.field, violation.param)
+		return fmt.Sprintf("must contain at most %s items", violation.param)
 	default:
-		return fmt.Sprintf("Field '%s' must be at most %s", violation.field, violation.param)
+		return fmt.Sprintf("must be at most %s", violation.param)
 	}
 }
 
 func formatLengthError(violation *validationViolation) string {
 	switch violation.kind {
 	case reflect.String:
-		return fmt.Sprintf("Field '%s' must contain exactly %s characters", violation.field, violation.param)
+		return fmt.Sprintf("must contain exactly %s characters", violation.param)
 	case reflect.Array, reflect.Map, reflect.Slice:
-		return fmt.Sprintf("Field '%s' must contain exactly %s items", violation.field, violation.param)
+		return fmt.Sprintf("must contain exactly %s items", violation.param)
 	default:
-		return fmt.Sprintf("Field '%s' must equal %s", violation.field, violation.param)
+		return fmt.Sprintf("must equal %s", violation.param)
 	}
 }

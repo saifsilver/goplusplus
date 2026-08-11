@@ -109,7 +109,7 @@ func compareValueToParameter(value reflect.Value, rule validationRule) (int, err
 			return 0, invalidRuleParameter(parameter)
 		}
 		return compareInt64(int64(utf8.RuneCountInString(value.String())), length), nil
-	case reflect.Array, reflect.Chan, reflect.Map, reflect.Slice:
+	case reflect.Array, reflect.Map, reflect.Slice:
 		length, err := strconv.ParseInt(parameter, 10, 64)
 		if err != nil {
 			return 0, invalidRuleParameter(parameter)
@@ -202,12 +202,27 @@ func validateUnique(value reflect.Value) (bool, error) {
 	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
 		return false, &validationConfigError{message: "unique requires an array or slice"}
 	}
-	for left := 0; left < value.Len(); left++ {
-		for right := left + 1; right < value.Len(); right++ {
-			if reflect.DeepEqual(valueInterface(value.Index(left)), valueInterface(value.Index(right))) {
+	if value.Len() > maxValidationCollection {
+		return false, nil
+	}
+	seen := make(map[any]struct{}, value.Len())
+	for index := 0; index < value.Len(); index++ {
+		item := dereferenceValue(value.Index(index))
+		if !item.IsValid() {
+			if _, exists := seen[nil]; exists {
 				return false, nil
 			}
+			seen[nil] = struct{}{}
+			continue
 		}
+		if !item.Comparable() {
+			return false, &validationConfigError{message: "unique requires comparable collection elements"}
+		}
+		key := item.Interface()
+		if _, exists := seen[key]; exists {
+			return false, nil
+		}
+		seen[key] = struct{}{}
 	}
 	return true, nil
 }
@@ -289,6 +304,12 @@ func isEmptyValidationValue(value reflect.Value) bool {
 			return true
 		}
 		return isEmptyValidationValue(value.Elem())
+	}
+	switch value.Kind() {
+	case reflect.String, reflect.Map, reflect.Slice:
+		return value.Len() == 0
+	case reflect.Array:
+		return value.Len() == 0 || value.IsZero()
 	}
 	return value.IsZero()
 }

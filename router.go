@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/saifsilver/goplusplus/dbcore"
@@ -15,6 +16,11 @@ type RouterGroup struct {
 	prefix      string
 	middlewares HandlersChain
 	engine      *Engine
+}
+
+type staticRoute struct {
+	mount    string
+	handlers HandlersChain
 }
 
 // Group creates a new child route group with a path prefix and optional middleware.
@@ -104,25 +110,121 @@ func (group *RouterGroup) Static(relativePath, root string) {
 
 // StaticFS serves embedded static files from an io/fs.FS filesystem (e.g. embed.FS) with SPA fallback routing to index.html.
 func (group *RouterGroup) StaticFS(relativePath string, fsys fs.FS) {
+	if fsys == nil {
+		panic("gpp: static filesystem cannot be nil")
+	}
+	mount := normalizeStaticMount(group.combinePath(relativePath))
 	fileServer := http.FileServer(http.FS(fsys))
 	handler := func(c *Context) error {
-		reqPath := strings.TrimPrefix(c.Request.URL.Path, group.combinePath(relativePath))
-		if reqPath == "" || reqPath == "/" {
-			reqPath = "index.html"
+		relative, ok := staticRelativePath(mount, c.Request.URL.Path)
+		if !ok {
+			return ErrNotFound("Static resource not found")
 		}
-		f, err := fsys.Open(strings.TrimPrefix(reqPath, "/"))
-		if err != nil {
-			// SPA fallback routing to index.html for client-side React/Vite/Vue Router
-			c.Request.URL.Path = path.Join(group.combinePath(relativePath), "index.html")
-		} else {
-			_ = f.Close()
+		servePath, exists := resolveStaticPath(fsys, relative)
+		if !exists {
+			if mount != "/" {
+				return ErrNotFound("Static resource not found")
+			}
+			servePath, exists = resolveStaticPath(fsys, "index.html")
+			if !exists {
+				return ErrNotFound("Static resource not found")
+			}
 		}
-		fileServer.ServeHTTP(c.Writer, c.Request)
+		request := c.Request.Clone(c.Request.Context())
+		urlCopy := *c.Request.URL
+		urlCopy.Path = staticServerPath(servePath)
+		urlCopy.RawPath = ""
+		request.URL = &urlCopy
+		fileServer.ServeHTTP(c.Writer, request)
 		return nil
 	}
-	urlPattern := path.Join(relativePath, "*filepath")
-	group.GET(urlPattern, handler)
-	group.HEAD(urlPattern, handler)
+	group.engine.addStaticRoute(mount, group.combineMiddlewares(HandlersChain{handler}))
+}
+
+func (engine *Engine) addStaticRoute(mount string, handlers HandlersChain) {
+	engine.staticMu.Lock()
+	defer engine.staticMu.Unlock()
+	engine.staticRoutes = append(engine.staticRoutes, staticRoute{mount: mount, handlers: handlers})
+	sort.SliceStable(engine.staticRoutes, func(i, j int) bool {
+		return len(engine.staticRoutes[i].mount) > len(engine.staticRoutes[j].mount)
+	})
+}
+
+func (engine *Engine) matchStaticRoute(method, requestPath string) HandlersChain {
+	if method != http.MethodGet && method != http.MethodHead {
+		return nil
+	}
+	engine.staticMu.RLock()
+	defer engine.staticMu.RUnlock()
+	for _, route := range engine.staticRoutes {
+		if _, ok := staticRelativePath(route.mount, requestPath); ok {
+			return route.handlers
+		}
+	}
+	return nil
+}
+
+func normalizeStaticMount(mount string) string {
+	if mount == "" || mount == "." {
+		return "/"
+	}
+	mount = path.Clean("/" + strings.TrimPrefix(mount, "/"))
+	if mount != "/" {
+		mount = strings.TrimSuffix(mount, "/")
+	}
+	return mount
+}
+
+func staticRelativePath(mount, requestPath string) (string, bool) {
+	if mount != "/" && requestPath != mount && !strings.HasPrefix(requestPath, mount+"/") {
+		return "", false
+	}
+	relative := requestPath
+	if mount != "/" {
+		relative = strings.TrimPrefix(requestPath, mount)
+	}
+	relative = strings.TrimPrefix(relative, "/")
+	for _, segment := range strings.Split(relative, "/") {
+		if segment == "." || segment == ".." {
+			return "", false
+		}
+	}
+	cleaned := strings.TrimPrefix(path.Clean("/"+relative), "/")
+	if cleaned == "." || cleaned == "" {
+		return "index.html", true
+	}
+	if !fs.ValidPath(cleaned) {
+		return "", false
+	}
+	return cleaned, true
+}
+
+func resolveStaticPath(fsys fs.FS, relative string) (string, bool) {
+	file, err := fsys.Open(relative)
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return "", false
+	}
+	if info.IsDir() {
+		index := path.Join(relative, "index.html")
+		if indexFile, err := fsys.Open(index); err == nil {
+			_ = indexFile.Close()
+			return index, true
+		}
+	}
+	return relative, true
+}
+
+func staticServerPath(relative string) string {
+	if path.Base(relative) == "index.html" {
+		directory := strings.TrimSuffix(relative, "index.html")
+		return "/" + directory
+	}
+	return "/" + relative
 }
 
 // StaticEmbed mounts an embedded filesystem (embed.FS) with zero-boilerplate automatic subfolder resolution (dist, build, static, public) and SPA index.html fallback.

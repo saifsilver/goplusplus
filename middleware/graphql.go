@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/saifsilver/goplusplus"
@@ -57,7 +58,7 @@ func GraphQLHandler(resolver GraphQLResolver) gpp.HandlerFunc {
 		var req GraphQLRequest
 		if err := c.BindJSON(&req); err != nil {
 			return c.JSON(http.StatusBadRequest, gpp.H{
-				"errors": []gpp.H{{"message": "Invalid GraphQL JSON request body: " + err.Error()}},
+				"errors": []gpp.H{{"message": "Invalid GraphQL request body"}},
 			})
 		}
 
@@ -69,9 +70,10 @@ func GraphQLHandler(resolver GraphQLResolver) gpp.HandlerFunc {
 
 		data, err := resolver(req.Query, req.Variables)
 		if err != nil {
+			slog.Error("graphql: resolver failed", slog.String("error", err.Error()), slog.String("request_id", c.RequestID()))
 			return c.JSON(http.StatusOK, gpp.H{
 				"data":   data,
-				"errors": []gpp.H{{"message": err.Error()}},
+				"errors": []gpp.H{{"message": "GraphQL operation failed"}},
 			})
 		}
 

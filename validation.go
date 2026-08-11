@@ -1,12 +1,18 @@
 package gpp
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+)
+
+const (
+	maxValidationDepth      = 32
+	maxValidationErrors     = 64
+	maxValidationCollection = 10_000
 )
 
 type validationRule struct {
@@ -36,75 +42,89 @@ type validationVisit struct {
 	pointer uintptr
 }
 
-func validateStruct(value any) error {
+type validationFieldMetadata struct {
+	index int
+	name  string
+	rules []validationRule
+	skip  bool
+}
+
+type validationStructMetadata struct {
+	fields []validationFieldMetadata
+}
+
+type validationMetadataResult struct {
+	metadata *validationStructMetadata
+	err      error
+}
+
+type validationState struct {
+	violations    []FieldViolation
+	visited       map[validationVisit]bool
+	configuration error
+	limitReported bool
+}
+
+var validationMetadataCache sync.Map
+
+func validateStruct(value any) (result error) {
+	defer func() {
+		if recover() != nil {
+			result = ErrInternal("Invalid validation configuration")
+		}
+	}()
 	if isNilValidationTarget(value) {
-		return ErrBadRequest("Validation target cannot be nil")
+		return ErrValidation([]FieldViolation{{Field: "request", Rule: "required", Message: "must not be nil"}})
 	}
 	if !isStruct(value) {
 		return nil
 	}
 
-	err := runLocalValidation(reflect.ValueOf(value))
-	var violation *validationViolation
-	if errors.As(err, &violation) {
-		return ErrBadRequest(formatValidationError(violation))
-	}
-	if err != nil {
+	state := validationState{visited: make(map[validationVisit]bool)}
+	state.validateStructValue(dereferenceValue(reflect.ValueOf(value)), "", 0)
+	if state.configuration != nil {
 		return ErrInternal("Invalid validation configuration")
 	}
-	return nil
-}
-
-func runLocalValidation(value reflect.Value) (err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = &validationConfigError{message: fmt.Sprint(recovered)}
-		}
-	}()
-
-	value = dereferenceValue(value)
-	return validateStructValue(value, "", make(map[validationVisit]bool))
-}
-
-func validateStructValue(value reflect.Value, path string, visited map[validationVisit]bool) error {
-	if value.Type() == reflect.TypeFor[time.Time]() {
-		return nil
-	}
-
-	typeOf := value.Type()
-	for index := 0; index < value.NumField(); index++ {
-		fieldType := typeOf.Field(index)
-		if fieldType.PkgPath != "" {
-			continue
-		}
-		if fieldType.Tag.Get("validate") == "-" {
-			continue
-		}
-
-		fieldPath := joinValidationPath(path, fieldType.Name)
-		rules, err := parseValidationRules(fieldType.Tag.Get("validate"))
-		if err != nil {
-			return err
-		}
-		if err := validateField(value.Field(index), value, fieldPath, rules, visited); err != nil {
-			return err
-		}
+	if len(state.violations) > 0 {
+		return ErrValidation(state.violations)
 	}
 	return nil
 }
 
-func validateField(
+func (state *validationState) validateStructValue(value reflect.Value, path string, depth int) {
+	if state.done() || value.Type() == reflect.TypeFor[time.Time]() {
+		return
+	}
+	if depth > maxValidationDepth {
+		state.addLimitViolation(path, "max_depth", "validation nesting exceeds the supported limit")
+		return
+	}
+
+	metadata, err := cachedValidationMetadata(value.Type())
+	if err != nil {
+		state.configuration = err
+		return
+	}
+	for _, field := range metadata.fields {
+		if state.done() {
+			return
+		}
+		if field.skip {
+			continue
+		}
+		state.validateField(value.Field(field.index), value, joinValidationPath(path, field.name), field.rules, depth)
+	}
+}
+
+func (state *validationState) validateField(
 	value reflect.Value,
 	owner reflect.Value,
 	path string,
 	rules []validationRule,
-	visited map[validationVisit]bool,
-) error {
-	if hasValidationRule(rules, "omitempty") && isEmptyValidationValue(value) {
-		return nil
-	}
-	if hasValidationRule(rules, "omitnil") && isNilValue(value) {
-		return nil
+	depth int,
+) {
+	if state.done() {
+		return
 	}
 
 	diveIndex := validationRuleIndex(rules, "dive")
@@ -113,78 +133,203 @@ func validateField(
 		limit = diveIndex
 	}
 	for _, rule := range rules[:limit] {
-		if rule.name == "omitempty" || rule.name == "omitnil" {
+		switch rule.name {
+		case "omitempty":
+			if isEmptyValidationValue(value) {
+				return
+			}
+			continue
+		case "omitnil":
+			if isNilValue(value) {
+				return
+			}
 			continue
 		}
+
 		valid, err := applyValidationRule(value, owner, rule)
 		if err != nil {
-			return err
+			state.configuration = err
+			return
 		}
 		if !valid {
-			return newValidationViolation(path, value, rule)
+			state.addViolation(path, value, rule)
 		}
 	}
 
 	if diveIndex >= 0 {
-		return validateDive(value, owner, path, rules[diveIndex+1:], visited)
+		state.validateDive(value, owner, path, rules[diveIndex+1:], depth+1)
+		return
 	}
-	return validateNestedValue(value, path, visited)
+	state.validateNestedValue(value, path, depth+1)
 }
 
-func validateDive(
+func (state *validationState) validateDive(
 	value reflect.Value,
 	owner reflect.Value,
 	path string,
 	rules []validationRule,
-	visited map[validationVisit]bool,
-) error {
+	depth int,
+) {
 	value = dereferenceValue(value)
-	if !value.IsValid() {
-		return nil
+	if !value.IsValid() || state.done() {
+		return
 	}
 
 	switch value.Kind() {
 	case reflect.Array, reflect.Slice:
-		for index := 0; index < value.Len(); index++ {
-			itemPath := fmt.Sprintf("%s[%d]", path, index)
-			if err := validateField(value.Index(index), owner, itemPath, rules, visited); err != nil {
-				return err
-			}
+		length := state.boundedCollectionLength(path, value.Len())
+		for index := 0; index < length && !state.done(); index++ {
+			state.validateField(value.Index(index), owner, fmt.Sprintf("%s[%d]", path, index), rules, depth)
 		}
-		return nil
 	case reflect.Map:
-		return validateMapDive(value, owner, path, rules, visited)
+		state.validateMapDive(value, owner, path, rules, depth)
 	default:
-		return &validationConfigError{message: "dive requires an array, slice, or map"}
+		state.configuration = &validationConfigError{message: "dive requires an array, slice, or map"}
 	}
 }
 
-func validateMapDive(
+func (state *validationState) validateMapDive(
 	value reflect.Value,
 	owner reflect.Value,
 	path string,
 	rules []validationRule,
-	visited map[validationVisit]bool,
-) error {
+	depth int,
+) {
 	keyRules, valueRules, err := splitMapValidationRules(rules)
 	if err != nil {
-		return err
+		state.configuration = err
+		return
 	}
 
-	keys := value.MapKeys()
-	sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
-	for _, key := range keys {
-		itemPath := fmt.Sprintf("%s[%v]", path, key.Interface())
-		if len(keyRules) > 0 {
-			if err := validateField(key, owner, itemPath+".key", keyRules, visited); err != nil {
-				return err
-			}
+	keys := boundedSortedMapKeys(value, state.boundedCollectionLength(path, value.Len()))
+	for index, key := range keys {
+		if state.done() {
+			return
 		}
-		if err := validateField(value.MapIndex(key), owner, itemPath, valueRules, visited); err != nil {
-			return err
+		itemPath := fmt.Sprintf("%s[%d]", path, index)
+		if len(keyRules) > 0 {
+			state.validateField(key, owner, itemPath+".key", keyRules, depth)
+		}
+		state.validateField(value.MapIndex(key), owner, itemPath, valueRules, depth)
+	}
+}
+
+func (state *validationState) validateNestedValue(value reflect.Value, path string, depth int) {
+	for value.IsValid() && (value.Kind() == reflect.Interface || value.Kind() == reflect.Ptr) {
+		if value.IsNil() {
+			return
+		}
+		if value.Kind() == reflect.Ptr {
+			visit := validationVisit{typeOf: value.Type(), pointer: value.Pointer()}
+			if state.visited[visit] {
+				return
+			}
+			state.visited[visit] = true
+			defer delete(state.visited, visit)
+		}
+		value = value.Elem()
+	}
+	if !value.IsValid() || state.done() {
+		return
+	}
+
+	switch value.Kind() {
+	case reflect.Struct:
+		state.validateStructValue(value, path, depth)
+	case reflect.Array, reflect.Slice:
+		length := state.boundedCollectionLength(path, value.Len())
+		for index := 0; index < length && !state.done(); index++ {
+			state.validateNestedValue(value.Index(index), fmt.Sprintf("%s[%d]", path, index), depth+1)
+		}
+	case reflect.Map:
+		keys := boundedSortedMapKeys(value, state.boundedCollectionLength(path, value.Len()))
+		for index, key := range keys {
+			state.validateNestedValue(value.MapIndex(key), fmt.Sprintf("%s[%d]", path, index), depth+1)
 		}
 	}
-	return nil
+}
+
+func cachedValidationMetadata(typeOf reflect.Type) (*validationStructMetadata, error) {
+	if cached, ok := validationMetadataCache.Load(typeOf); ok {
+		result := cached.(validationMetadataResult)
+		return result.metadata, result.err
+	}
+
+	metadata, err := buildValidationMetadata(typeOf)
+	result := validationMetadataResult{metadata: metadata, err: err}
+	actual, _ := validationMetadataCache.LoadOrStore(typeOf, result)
+	stored := actual.(validationMetadataResult)
+	return stored.metadata, stored.err
+}
+
+func buildValidationMetadata(typeOf reflect.Type) (*validationStructMetadata, error) {
+	metadata := &validationStructMetadata{fields: make([]validationFieldMetadata, 0, typeOf.NumField())}
+	for index := 0; index < typeOf.NumField(); index++ {
+		field := typeOf.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		tag := field.Tag.Get("validate")
+		rules, err := parseValidationRules(tag)
+		if err != nil {
+			return nil, err
+		}
+		metadata.fields = append(metadata.fields, validationFieldMetadata{
+			index: index,
+			name:  validationJSONFieldName(field),
+			rules: rules,
+			skip:  tag == "-",
+		})
+	}
+	return metadata, nil
+}
+
+func validationJSONFieldName(field reflect.StructField) string {
+	name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+	if name == "" || name == "-" {
+		return field.Name
+	}
+	return name
+}
+
+func (state *validationState) addViolation(path string, value reflect.Value, rule validationRule) {
+	if len(state.violations) >= maxValidationErrors {
+		return
+	}
+	internal := newValidationViolation(path, value, rule).(*validationViolation)
+	state.violations = append(state.violations, FieldViolation{
+		Field: path, Rule: rule.name, Message: validationRuleMessage(internal),
+	})
+}
+
+func (state *validationState) addLimitViolation(path, rule, message string) {
+	if state.limitReported || len(state.violations) >= maxValidationErrors {
+		return
+	}
+	state.limitReported = true
+	state.violations = append(state.violations, FieldViolation{Field: path, Rule: rule, Message: message})
+}
+
+func (state *validationState) boundedCollectionLength(path string, length int) int {
+	if length <= maxValidationCollection {
+		return length
+	}
+	state.addLimitViolation(path, "max_items", "collection exceeds the validation traversal limit")
+	return maxValidationCollection
+}
+
+func (state *validationState) done() bool {
+	return state.configuration != nil || len(state.violations) >= maxValidationErrors
+}
+
+func boundedSortedMapKeys(value reflect.Value, limit int) []reflect.Value {
+	keys := make([]reflect.Value, 0, limit)
+	iterator := value.MapRange()
+	for len(keys) < limit && iterator.Next() {
+		keys = append(keys, iterator.Key())
+	}
+	sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
+	return keys
 }
 
 func splitMapValidationRules(rules []validationRule) ([]validationRule, []validationRule, error) {
@@ -197,27 +342,6 @@ func splitMapValidationRules(rules []validationRule) ([]validationRule, []valida
 		return nil, nil, &validationConfigError{message: "keys must immediately follow dive and end with endkeys"}
 	}
 	return rules[keysIndex+1 : endKeysIndex], rules[endKeysIndex+1:], nil
-}
-
-func validateNestedValue(value reflect.Value, path string, visited map[validationVisit]bool) error {
-	for value.IsValid() && (value.Kind() == reflect.Interface || value.Kind() == reflect.Ptr) {
-		if value.IsNil() {
-			return nil
-		}
-		if value.Kind() == reflect.Ptr {
-			visit := validationVisit{typeOf: value.Type(), pointer: value.Pointer()}
-			if visited[visit] {
-				return nil
-			}
-			visited[visit] = true
-			defer delete(visited, visit)
-		}
-		value = value.Elem()
-	}
-	if value.IsValid() && value.Kind() == reflect.Struct {
-		return validateStructValue(value, path, visited)
-	}
-	return nil
 }
 
 func parseValidationRules(tag string) ([]validationRule, error) {
@@ -245,8 +369,7 @@ func isNilValidationTarget(value any) bool {
 	if value == nil {
 		return true
 	}
-	reflected := reflect.ValueOf(value)
-	return isNilValue(reflected)
+	return isNilValue(reflect.ValueOf(value))
 }
 
 func isStruct(value any) bool {
@@ -287,10 +410,6 @@ func joinValidationPath(parent, field string) string {
 		return field
 	}
 	return parent + "." + field
-}
-
-func hasValidationRule(rules []validationRule, name string) bool {
-	return validationRuleIndex(rules, name) >= 0
 }
 
 func validationRuleIndex(rules []validationRule, name string) int {

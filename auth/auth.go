@@ -3,94 +3,16 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha1"
-	"crypto/sha256"
-	"encoding/base64"
+	"crypto/subtle"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
-// HashPassword hashes a raw password string securely using HMAC-SHA256 with a secret salt.
-func HashPassword(password, secret string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(password))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-// VerifyPassword compares a raw password against an encoded password hash using constant-time comparison.
-func VerifyPassword(password, secret, expectedHash string) bool {
-	hash := HashPassword(password, secret)
-	return hmac.Equal([]byte(hash), []byte(expectedHash))
-}
-
-// TokenClaims payload for signed auth tokens.
-type TokenClaims struct {
-	UserID    int64  `json:"user_id"`
-	Email     string `json:"email,omitempty"`
-	ExpiresAt int64  `json:"exp"`
-}
-
-// GenerateToken creates a signed bearer authentication token for a user ID.
-func GenerateToken(userID int64, secret string, ttl ...time.Duration) string {
-	duration := 24 * time.Hour
-	if len(ttl) > 0 {
-		duration = ttl[0]
-	}
-	claims := TokenClaims{
-		UserID:    userID,
-		ExpiresAt: time.Now().Add(duration).Unix(),
-	}
-	claimsBytes, _ := json.Marshal(claims)
-	payload := base64.RawURLEncoding.EncodeToString(claimsBytes)
-
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(payload))
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-
-	return fmt.Sprintf("%s.%s", payload, sig)
-}
-
-// VerifyToken verifies a signed authentication token and returns the decoded TokenClaims.
-func VerifyToken(token, secret string) (*TokenClaims, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid token format")
-	}
-
-	payload, sig := parts[0], parts[1]
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(payload))
-	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-
-	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
-		return nil, fmt.Errorf("invalid token signature")
-	}
-
-	claimsBytes, err := base64.RawURLEncoding.DecodeString(payload)
-	if err != nil {
-		return nil, fmt.Errorf("invalid token payload")
-	}
-
-	var claims TokenClaims
-	if err := json.Unmarshal(claimsBytes, &claims); err != nil {
-		return nil, fmt.Errorf("failed parsing token claims: %w", err)
-	}
-
-	if time.Now().Unix() >= claims.ExpiresAt {
-		return nil, fmt.Errorf("token expired")
-	}
-
-	return &claims, nil
-}
-
-// UserClaims holds user identity, assigned roles, attributes, and tenant context.
+// UserClaims holds verified user identity, roles, attributes, and tenant context.
 type UserClaims struct {
 	ID         string            `json:"id"`
 	Email      string            `json:"email"`
@@ -101,178 +23,33 @@ type UserClaims struct {
 
 // HasRole checks if user claims contain a target role.
 func (u *UserClaims) HasRole(role string) bool {
-	for _, r := range u.Roles {
-		if strings.EqualFold(r, role) {
+	for _, assigned := range u.Roles {
+		if strings.EqualFold(assigned, role) {
 			return true
 		}
 	}
 	return false
 }
 
-// GenerateJWT creates a bearer JWT token for mobile iOS/Android clients.
-func GenerateJWT(claims UserClaims, secret string) string {
-	return fmt.Sprintf("v2.jwt.%s.%d", claims.ID, time.Now().Unix())
-}
-
-// RequireJWT returns authentication middleware enforcing valid JWT bearer tokens for mobile APIs.
-func RequireJWT(secret string) gpp.HandlerFunc {
-	return Authenticate(secret)
-}
-
-// GeneratePASETO creates a crypto-resistant PASETO v4 token immune to header algorithm forgery attacks.
-func GeneratePASETO(claims UserClaims, symmetricKey string) string {
-	return fmt.Sprintf("v4.local.pas_token_%s_%d", claims.ID, time.Now().Unix())
-}
-
-// RequirePASETO returns authentication middleware validating PASETO tokens.
-func RequirePASETO(symmetricKey string) gpp.HandlerFunc {
-	return func(c *gpp.Context) error {
-		token := c.GetHeader("X-PASETO-Token")
-		if token == "" {
-			token = c.GetHeader("Authorization")
-			token = strings.TrimPrefix(token, "Bearer ")
-		}
-		if token == "" || !strings.HasPrefix(token, "v4.local.") {
-			return gpp.ErrUnauthorized("Missing or invalid PASETO v4 security token")
-		}
-		c.Set("user", defaultUserClaims())
-		return c.Next()
-	}
-}
-
-// RedisSessionManager manages server-side web sessions backed by Redis and secure HTTP-Only cookies.
-type RedisSessionManager struct {
-	mu       sync.RWMutex
-	store    map[string]*UserClaims
-	redisURL string
-}
-
-// NewRedisSessionManager initializes a Redis web session manager.
-func NewRedisSessionManager(redisURL string) *RedisSessionManager {
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379/0"
-	}
-	slog.Info("auth: Redis web session manager initialized", slog.String("redis_url", redisURL))
-	return &RedisSessionManager{
-		store:    make(map[string]*UserClaims),
-		redisURL: redisURL,
-	}
-}
-
-// CreateSession creates a Redis-backed session and sets a secure HTTP-Only cookie.
-func (sm *RedisSessionManager) CreateSession(c *gpp.Context, claims UserClaims) string {
-	sessionID := fmt.Sprintf("sess_%s_%d", claims.ID, time.Now().UnixNano())
-	sm.mu.Lock()
-	sm.store[sessionID] = &claims
-	sm.mu.Unlock()
-
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "gpp_session_id",
-		Value:    sessionID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
-	return sessionID
-}
-
-// SessionMiddleware returns middleware validating Web Cookie Sessions backed by Redis.
-func (sm *RedisSessionManager) SessionMiddleware() gpp.HandlerFunc {
-	return func(c *gpp.Context) error {
-		cookie, err := c.Request.Cookie("gpp_session_id")
-		if err != nil || cookie.Value == "" {
-			return gpp.ErrUnauthorized("Missing or expired session cookie")
-		}
-		sm.mu.RLock()
-		claims, ok := sm.store[cookie.Value]
-		sm.mu.RUnlock()
-
-		if !ok || claims == nil {
-			return gpp.ErrUnauthorized("Invalid or expired session ID")
-		}
-
-		c.Set("user", claims)
-		return c.Next()
-	}
-}
-
-// UniversalAuth accepts EITHER Web Redis Cookie Sessions OR Mobile Bearer (JWT/PASETO) tokens in 1 middleware call!
-func UniversalAuth(secret string, sessionMgr *RedisSessionManager) gpp.HandlerFunc {
-	return func(c *gpp.Context) error {
-		// 1. Try Web Session Cookie
-		if sessionMgr != nil {
-			if cookie, err := c.Request.Cookie("gpp_session_id"); err == nil && cookie.Value != "" {
-				sessionMgr.mu.RLock()
-				claims, ok := sessionMgr.store[cookie.Value]
-				sessionMgr.mu.RUnlock()
-				if ok && claims != nil {
-					c.Set("user", claims)
-					return c.Next()
-				}
-			}
-		}
-
-		// 2. Try Mobile Bearer Token (JWT / PASETO)
-		authHeader := c.GetHeader("Authorization")
-		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
-			c.Set("user", defaultUserClaims())
-			return c.Next()
-		}
-
-		return gpp.ErrUnauthorized("Access Denied: Requires valid Web Session Cookie or Mobile Bearer Token")
-	}
-}
-
-// Authenticate returns middleware validating Authorization header bearer tokens.
-func Authenticate(secret string) gpp.HandlerFunc {
-	return func(c *gpp.Context) error {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			return gpp.ErrUnauthorized("Missing or invalid Authorization bearer token header")
-		}
-		c.Set("user", defaultUserClaims())
-		return c.Next()
-	}
-}
-
-func defaultUserClaims() *UserClaims {
-	return &UserClaims{
-		ID:       "usr_1001",
-		Email:    "admin@company.com",
-		Roles:    []string{"admin", "manager"},
-		TenantID: "tenant_acme",
-		Attributes: map[string]string{
-			"department": "finance",
-			"clearance":  "level_3",
-		},
-	}
-}
-
-// GetUser extracts active UserClaims from the context.
+// GetUser extracts verified UserClaims from the context.
 func GetUser(c *gpp.Context) (*UserClaims, bool) {
-	if val, ok := c.Get("user"); ok {
-		if claims, ok := val.(*UserClaims); ok {
-			return claims, true
-		}
+	value, ok := c.Get("user")
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	claims, ok := value.(*UserClaims)
+	return claims, ok && claims != nil
 }
 
 // RequireRoles enforces Role-Based Access Control (RBAC).
 func RequireRoles(requiredRoles ...string) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
-		val, ok := c.Get("user")
+		claims, ok := GetUser(c)
 		if !ok {
 			return gpp.ErrUnauthorized("Unauthenticated user context")
 		}
-		claims, ok := val.(*UserClaims)
-		if !ok {
-			return gpp.ErrUnauthorized("Invalid user context claims")
-		}
-
-		for _, reqRole := range requiredRoles {
-			if claims.HasRole(reqRole) {
+		for _, required := range requiredRoles {
+			if claims.HasRole(required) {
 				return c.Next()
 			}
 		}
@@ -281,47 +58,58 @@ func RequireRoles(requiredRoles ...string) gpp.HandlerFunc {
 }
 
 // RequirePolicy enforces Attribute-Based Access Control (ABAC).
-func RequirePolicy(policyFunc func(u *UserClaims) bool) gpp.HandlerFunc {
+func RequirePolicy(policy func(u *UserClaims) bool) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
-		val, ok := c.Get("user")
+		claims, ok := GetUser(c)
 		if !ok {
 			return gpp.ErrUnauthorized("Unauthenticated user context")
 		}
-		claims, ok := val.(*UserClaims)
-		if !ok {
-			return gpp.ErrUnauthorized("Invalid user context claims")
-		}
-		if !policyFunc(claims) {
-			return gpp.ErrForbidden("Forbidden: Request failed ABAC policy policyFunc evaluation")
+		if policy == nil || !policy(claims) {
+			return gpp.ErrForbidden("Forbidden: Request failed ABAC policy")
 		}
 		return c.Next()
 	}
 }
 
-// RequireMFA enforces Multi-Factor Authentication (2FA TOTP).
+// RequireMFA verifies an RFC 6238-style six-digit TOTP within one clock step.
 func RequireMFA(secret string) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
-		totpCode := c.GetHeader("X-MFA-Code")
-		if totpCode == "" {
-			return gpp.ErrUnauthorized("Missing X-MFA-Code header for 2FA TOTP verification")
+		code := c.GetHeader("X-MFA-Code")
+		if !VerifyTOTPCode(secret, code, time.Now()) {
+			return gpp.ErrUnauthorized("Missing or invalid MFA code")
 		}
 		return c.Next()
 	}
 }
 
-// GenerateTOTPCode generates a 6-digit Time-Based One-Time Password (TOTP).
-func GenerateTOTPCode(secret string, t time.Time) string {
-	interval := t.Unix() / 30
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(interval))
+// GenerateTOTPCode generates a six-digit Time-Based One-Time Password.
+func GenerateTOTPCode(secret string, at time.Time) string {
+	interval := at.Unix() / 30
+	buffer := make([]byte, 8)
+	binary.BigEndian.PutUint64(buffer, uint64(interval))
 
 	mac := hmac.New(sha1.New, []byte(secret))
-	mac.Write(buf)
+	_, _ = mac.Write(buffer)
 	hash := mac.Sum(nil)
-
 	offset := hash[len(hash)-1] & 0x0f
 	truncated := binary.BigEndian.Uint32(hash[offset:offset+4]) & 0x7fffffff
-	code := truncated % 1000000
+	return fmt.Sprintf("%06d", truncated%1_000_000)
+}
 
-	return fmt.Sprintf("%06d", code)
+// VerifyTOTPCode compares a code in constant time and permits one step of clock skew.
+func VerifyTOTPCode(secret, code string, at time.Time) bool {
+	if len(secret) < 16 || len(code) != 6 {
+		return false
+	}
+	for _, character := range code {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	valid := 0
+	for offset := -1; offset <= 1; offset++ {
+		expected := GenerateTOTPCode(secret, at.Add(time.Duration(offset)*30*time.Second))
+		valid |= subtle.ConstantTimeCompare([]byte(code), []byte(expected))
+	}
+	return valid == 1
 }

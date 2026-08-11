@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	gpp "github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/auth"
@@ -16,6 +18,17 @@ func main() {
 	i18nBundle := i18n.NewBundle("en")
 
 	app := gpp.New()
+	signingKey := os.Getenv("GPP_JWT_SIGNING_KEY")
+	if len(signingKey) < 32 {
+		panic("GPP_JWT_SIGNING_KEY must contain at least 32 bytes")
+	}
+	tokens, err := auth.NewTokenManager(auth.TokenConfig{
+		Issuer: "goplusplus-enterprise-platform", Audience: "enterprise-platform-api",
+		ActiveKeyID: "primary", Keys: map[string][]byte{"primary": []byte(signingKey)}, MaxTTL: 24 * time.Hour,
+	})
+	if err != nil {
+		panic(err)
+	}
 
 	// Global System & Security Middleware
 	app.Use(
@@ -47,7 +60,7 @@ func main() {
 	// Protected Admin API (Requires JWT Auth + RBAC Admin Role + ABAC Finance Policy + MFA)
 	adminGroup := app.Group("/api/admin")
 	adminGroup.Use(
-		auth.Authenticate("secret_key"),
+		auth.AuthenticateWithManager(tokens),
 		auth.RequireRoles("admin"),
 		auth.RequirePolicy(func(u *auth.UserClaims) bool {
 			return u.Attributes["department"] == "finance"

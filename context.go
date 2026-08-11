@@ -461,14 +461,9 @@ func (c *Context) Status(code int) {
 	c.Writer.WriteHeader(code)
 }
 
-// BindJSON parses the request body as JSON into the provided struct pointer.
+// BindJSON securely parses one JSON document into a non-nil pointer.
 func (c *Context) BindJSON(v any) error {
-	if c.Request.Body == nil {
-		return errors.New("gpp: request body is nil")
-	}
-	defer c.Request.Body.Close()
-	decoder := json.NewDecoder(c.Request.Body)
-	return decoder.Decode(v)
+	return bindJSON(c, v)
 }
 
 // Validate executes validation rules declared in validate struct tags and returns
@@ -480,7 +475,7 @@ func (c *Context) Validate(v any) error {
 // BindAndValidate decodes the JSON request body and validates struct fields in a single atomic step.
 func (c *Context) BindAndValidate(v any) error {
 	if err := c.BindJSON(v); err != nil {
-		return ErrBadRequest("Invalid request body: " + err.Error())
+		return err
 	}
 	return c.Validate(v)
 }

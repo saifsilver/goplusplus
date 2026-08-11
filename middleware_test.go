@@ -3,6 +3,7 @@ package gpp_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,9 @@ func TestRecoveryMiddleware(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500 on panic recovery, got %d", w.Code)
 	}
+	if strings.Contains(w.Body.String(), "simulated fatal error") || strings.Contains(w.Body.String(), "stack") {
+		t.Fatalf("panic details leaked to client: %s", w.Body.String())
+	}
 }
 
 func TestRateLimitMiddleware(t *testing.T) {
@@ -123,5 +127,19 @@ func TestTimeoutMiddleware(t *testing.T) {
 
 	if w.Code != http.StatusGatewayTimeout {
 		t.Fatalf("expected 504 Gateway Timeout, got %d", w.Code)
+	}
+}
+
+func TestTimeoutMiddlewarePreservesHandlerErrors(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.Timeout(time.Second))
+	app.GET("/error", func(c *gpp.Context) error {
+		return gpp.ErrInternal("database detail")
+	})
+	request := httptest.NewRequest(http.MethodGet, "/error", nil)
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "database detail") {
+		t.Fatalf("timeout middleware corrupted error response: %d %s", response.Code, response.Body.String())
 	}
 }

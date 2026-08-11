@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -19,14 +18,15 @@ func Recovery() gpp.HandlerFunc {
 					slog.Any("panic", r),
 					slog.String("stack", string(stack)),
 					slog.String("path", c.Request.URL.Path),
+					slog.String("request_id", c.RequestID()),
 				)
 				c.Abort()
-				_ = c.JSON(http.StatusInternalServerError, gpp.H{
-					"code":    http.StatusInternalServerError,
-					"message": "Internal Server Error",
-					"error":   fmt.Sprintf("%v", r),
+				_ = c.JSON(http.StatusInternalServerError, gpp.ProblemDetails{
+					Type: "https://goplusplus.dev/errors/internal-error", Title: "Internal Server Error",
+					Status: http.StatusInternalServerError, Detail: "An internal server error occurred",
+					Instance: c.Request.URL.Path, TraceID: c.RequestID(),
 				})
-				err = fmt.Errorf("panic: %v", r)
+				err = gpp.ErrInternal("panic recovered")
 			}
 		}()
 		return c.Next()

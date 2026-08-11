@@ -127,9 +127,16 @@ err = db.InTx(reqCtx, func(tx *sql.Tx) error {
 ```go
 import "github.com/saifsilver/goplusplus/auth"
 
+tokens, err := auth.NewTokenManager(auth.TokenConfig{
+    Issuer: "https://api.example.com", Audience: "example-api",
+    ActiveKeyID: "primary", Keys: map[string][]byte{"primary": signingKey},
+    MaxTTL: 24 * time.Hour,
+})
+if err != nil { panic(err) }
+
 adminGroup := app.Group("/api/admin")
 adminGroup.Use(
-    auth.Authenticate("jwt_secret"),
+    auth.AuthenticateWithManager(tokens),
     auth.RequireRoles("admin"),
     auth.RequirePolicy(func(u *auth.UserClaims) bool {
         return u.Attributes["department"] == "finance"
@@ -163,7 +170,7 @@ adminGroup.Use(
 | **Install Pre-Push Gate** | `make install-hooks` |
 | **Test/Coverage/Security Gate** | `make verify` |
 | **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
-| **Password Hashing & JWT** | `hash := auth.HashPassword(pass, secret)` & `token := auth.GenerateToken(userID, secret)` |
+| **Password Hashing & JWT** | `hash, err := auth.HashPasswordWithConfig(pass, pepper, auth.DefaultPasswordConfig())` & `token := auth.GenerateToken(userID, signingKey, 15*time.Minute)` |
 | **ULID (K-Sortable)** | `id.NewULID()` → `"01JEX89K2P3M4N5Q6R7S8T9VWX"` |
 | **Snowflake (64-bit int)** | `node, _ := id.NewSnowflakeNode(1)` & `node.NextID()` or `id.NewSnowflake()` |
 | **UUID v4 / UUID v7** | `id.NewUUID()` (random) or `id.NewUUIDv7()` (time-ordered, k-sortable) |

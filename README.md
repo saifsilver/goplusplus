@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/github/v/tag/saifsilver/goplusplus?color=blue&label=version)](https://github.com/saifsilver/goplusplus/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-`goplusplus` (`gpp`) is a **zero-dependency, ultra-fast, secure, and hyper-scalable Go framework** engineered for building modern REST APIs, modular monoliths, and distributed microservices. Designed around a **90% Business Logic, 10% Infrastructure Code** philosophy, `goplusplus` reduces standard Go handler boilerplate by over 90% while keeping the learning curve under **4 hours**.
+`goplusplus` (`gpp`) is an **ultra-fast, secure, and hyper-scalable Go framework** engineered for building modern REST APIs, modular monoliths, and distributed microservices. Designed around a **90% Business Logic, 10% Infrastructure Code** philosophy, `goplusplus` reduces standard Go handler boilerplate by over 90% while keeping the learning curve under **4 hours**.
 
 ---
 
@@ -29,7 +29,7 @@ With `goplusplus`, developers focus **exclusively on domain business logic and i
 ## 📦 Installation
 
 ```bash
-go get github.com/saifsilver/goplusplus@v1.2.0
+go get github.com/saifsilver/goplusplus@v1.11.0
 ```
 
 ---
@@ -106,6 +106,31 @@ app.POST("/users", func(c *gpp.Context) error {
     }
     return c.JSON(201, gpp.H{"status": "created", "user": req})
 })
+```
+
+Invalid input returns stable, machine-readable RFC 7807 JSON using the request's JSON field names:
+
+```json
+{
+  "type": "https://goplusplus.dev/errors/validation",
+  "title": "Request validation failed",
+  "status": 400,
+  "detail": "One or more fields are invalid",
+  "instance": "/users",
+  "errors": [
+    {"field": "name", "rule": "min", "message": "must contain at least 2 characters"}
+  ]
+}
+```
+
+Strings count Unicode code points. Slices, arrays, and maps use collection length; numeric fields use numeric value. `required` rejects zero values and empty collections. `omitempty` skips only the rules that follow it when the field is empty. Validation metadata is cached per struct type, traversal is bounded, and cycles are detected.
+
+JSON binding requires `application/json`, limits bodies to 1 MiB, rejects unknown fields and multiple documents, and never exposes decoder internals. Compatibility can be enabled explicitly:
+
+```go
+app.JSONBinding.AllowUnknownFields = true
+app.JSONBinding.AllowNonJSONContentType = true
+app.JSONBinding.MaxBodyBytes = 2 << 20
 ```
 
 Built-in validation rules:
@@ -356,22 +381,39 @@ cms.Add("trending_topic", 1)
 
 ---
 
-## 🔒 Universal Security & Authentication Engine (PASETO, JWT, Redis Sessions)
+## 🔒 Universal Security & Authentication Engine
 
 `goplusplus` includes multi-platform security for Web and Mobile applications:
 
 ```go
-// 1. Mobile Auth (PASETO v4 & JWT Bearer Tokens)
-pasToken := auth.GeneratePASETO(userClaims, secretKey)
-jwtToken := auth.GenerateJWT(userClaims, secretKey)
+// 1. Password storage (Argon2id PHC hash with random per-password salt)
+passwordHash, err := auth.HashPasswordWithConfig(
+    password, passwordPepper, auth.DefaultPasswordConfig(),
+)
+if err != nil { return err }
 
-// 2. Web Auth (Redis-Backed HTTP-Only SameSite Cookie Sessions)
-sessionMgr := auth.NewRedisSessionManager("redis://localhost:6379/0")
-sessionID  := sessionMgr.CreateSession(c, userClaims)
+// 2. JWT policy with explicit issuer, audience, key ID, rotation set, and TTL
+tokens, err := auth.NewTokenManager(auth.TokenConfig{
+    Issuer: "https://api.example.com",
+    Audience: "example-api",
+    ActiveKeyID: "2026-08",
+    Keys: map[string][]byte{"2026-08": signingKey}, // at least 32 random bytes
+    MaxTTL: 24 * time.Hour,
+})
+if err != nil { return err }
+jwtToken, err := tokens.IssueUser(userClaims, 15*time.Minute)
 
-// 3. Universal Auth Middleware (Accepts Web Cookie Sessions OR Mobile Bearer Tokens in 1 call!)
-app.Use(auth.UniversalAuth(secretKey, sessionMgr))
+// 3. Server-side HTTP-only SameSite cookie sessions
+sessionMgr, err := auth.NewSessionManager(auth.SessionConfig{
+    TTL: 8 * time.Hour, SameSite: http.SameSiteLaxMode,
+})
+if sessionMgr.CreateSession(c, userClaims) == "" { return errors.New("session creation failed") }
+
+// 4. Accept a verified cookie session or signed JWT
+app.Use(auth.UniversalAuthWithManager(tokens, sessionMgr))
 ```
+
+The former placeholder PASETO API is disabled and fails closed. `GenerateToken` and `GenerateJWT` now require exactly one explicit positive TTL. Use `VerifyLegacyPassword` or `VerifyPasswordWithMigration` only while migrating pre-v1.11 HMAC password records.
 
 ---
 

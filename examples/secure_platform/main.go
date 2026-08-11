@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	gpp "github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/auth"
@@ -10,9 +12,24 @@ import (
 )
 
 func main() {
-	// 1. Initialize Redis Web Session Manager & Secrets
-	sessionMgr := auth.NewRedisSessionManager("redis://localhost:6379/0")
-	jwtSecret := "super_secret_jwt_key_991823"
+	// 1. Initialize secure session and JWT policy from deployment secrets.
+	signingKey := os.Getenv("GPP_JWT_SIGNING_KEY")
+	if len(signingKey) < 32 {
+		panic("GPP_JWT_SIGNING_KEY must contain at least 32 bytes")
+	}
+	sessionMgr, err := auth.NewSessionManager(auth.SessionConfig{
+		TTL: 8 * time.Hour, SameSite: http.SameSiteLaxMode,
+	})
+	if err != nil {
+		panic(err)
+	}
+	tokens, err := auth.NewTokenManager(auth.TokenConfig{
+		Issuer: "goplusplus-secure-platform", Audience: "secure-platform-api",
+		ActiveKeyID: "primary", Keys: map[string][]byte{"primary": []byte(signingKey)}, MaxTTL: 24 * time.Hour,
+	})
+	if err != nil {
+		panic(err)
+	}
 
 	// 2. Initialize goplusplus Application Engine
 	app := gpp.New()
@@ -23,41 +40,43 @@ func main() {
 		middleware.Security(),
 	)
 
-	// Web Auth Endpoint (Creates Redis Session & sets HTTP-Only Cookie)
+	// Web Auth Endpoint (creates a server-side session and HTTP-Only cookie)
 	app.POST("/api/v1/auth/web-login", func(c *gpp.Context) error {
 		claims := auth.UserClaims{
-			ID:    "usr_web_1",
+			ID:    "1001",
 			Email: "user@webapp.com",
 			Roles: []string{"user"},
 		}
-		sessionID := sessionMgr.CreateSession(c, claims)
+		if sessionMgr.CreateSession(c, claims) == "" {
+			return gpp.ErrInternal("session creation failed")
+		}
 		return c.JSON(http.StatusOK, gpp.H{
-			"status":     "authenticated",
-			"session_id": sessionID,
-			"method":     "HTTP-Only SameSite Cookie",
+			"status": "authenticated",
+			"method": "HTTP-Only SameSite Cookie",
 		})
 	})
 
-	// Mobile Auth Endpoint (Issues PASETO & JWT tokens)
+	// Mobile Auth Endpoint (issues a verified JWT with an explicit TTL).
 	app.POST("/api/v1/auth/mobile-login", func(c *gpp.Context) error {
 		claims := auth.UserClaims{
-			ID:    "usr_mob_1",
+			ID:    "1002",
 			Email: "mobile@app.com",
 			Roles: []string{"user"},
 		}
-		pasToken := auth.GeneratePASETO(claims, jwtSecret)
-		jwtToken := auth.GenerateJWT(claims, jwtSecret)
+		jwtToken, err := tokens.IssueUser(claims, 15*time.Minute)
+		if err != nil {
+			return err
+		}
 		return c.JSON(http.StatusOK, gpp.H{
-			"status":       "authenticated",
-			"paseto_token": pasToken,
-			"jwt_token":    jwtToken,
-			"method":       "Authorization: Bearer <token>",
+			"status":    "authenticated",
+			"jwt_token": jwtToken,
+			"method":    "Authorization: Bearer <token>",
 		})
 	})
 
 	// Unified Secure API Group (Accepts EITHER Web Session Cookie OR Mobile Bearer Token in 1 call!)
 	secureAPI := app.Group("/api/v1/secure")
-	secureAPI.Use(auth.UniversalAuth(jwtSecret, sessionMgr))
+	secureAPI.Use(auth.UniversalAuthWithManager(tokens, sessionMgr))
 
 	secureAPI.GET("/profile", func(c *gpp.Context) error {
 		user, _ := c.Get("user")

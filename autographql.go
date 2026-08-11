@@ -2,6 +2,7 @@ package gpp
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -117,7 +118,7 @@ func (engine *Engine) AutoGraphQLHandler() HandlerFunc {
 		var req gqlReq
 		if err := c.BindJSON(&req); err != nil {
 			return c.JSON(http.StatusBadRequest, H{
-				"errors": []H{{"message": "Invalid GraphQL body: " + err.Error()}},
+				"errors": []H{{"message": "Invalid GraphQL request body"}},
 			})
 		}
 
@@ -135,8 +136,9 @@ func (engine *Engine) AutoGraphQLHandler() HandlerFunc {
 
 		schema, err := engine.autoGraphQLSchema()
 		if err != nil {
+			slog.Error("graphql: schema construction failed", slog.String("error", err.Error()), slog.String("request_id", c.RequestID()))
 			return c.JSON(http.StatusInternalServerError, H{
-				"errors": []H{{"message": err.Error()}},
+				"errors": []H{{"message": "GraphQL service is unavailable"}},
 			})
 		}
 		result := graphql.Do(graphql.Params{
@@ -146,6 +148,16 @@ func (engine *Engine) AutoGraphQLHandler() HandlerFunc {
 			OperationName:  req.Operation,
 			Context:        c.Request.Context(),
 		})
+		if len(result.Errors) > 0 {
+			for _, resultError := range result.Errors {
+				slog.Error("graphql: operation failed",
+					slog.String("error", resultError.Message), slog.String("request_id", c.RequestID()),
+				)
+			}
+			return c.JSON(http.StatusOK, H{
+				"data": result.Data, "errors": []H{{"message": "GraphQL operation failed"}},
+			})
+		}
 		return c.JSON(http.StatusOK, result)
 	}
 }
@@ -156,7 +168,7 @@ func validateGraphQLComplexity(query string) error {
 	}
 	document, err := parser.Parse(parser.ParseParams{Source: query})
 	if err != nil {
-		return fmt.Errorf("Invalid GraphQL query: %w", err)
+		return fmt.Errorf("invalid GraphQL query")
 	}
 	fragments := graphQLFragments(document)
 	fieldCount := 0

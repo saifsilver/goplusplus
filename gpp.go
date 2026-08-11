@@ -19,7 +19,7 @@ import (
 )
 
 // Version is the current release version of the goplusplus framework.
-const Version = "v1.10.0"
+const Version = "v1.11.0"
 
 // CLIOptions defines configuration for application binary CLI flags.
 type CLIOptions struct {
@@ -44,6 +44,8 @@ type Engine struct {
 	graphqlMu       sync.RWMutex
 	graphqlFields   graphql.Fields
 	graphqlSchema   *graphql.Schema
+	staticMu        sync.RWMutex
+	staticRoutes    []staticRoute
 	NotFoundHandler HandlerFunc
 	ErrorHandler    func(c *Context, err error)
 	Server          *http.Server
@@ -52,6 +54,7 @@ type Engine struct {
 	IdleTimeout     time.Duration
 	MaxHeaderBytes  int
 	ShutdownTimeout time.Duration
+	JSONBinding     JSONBindingConfig
 }
 
 // New creates a fresh instance of the go++ engine with high-performance default configurations.
@@ -68,6 +71,7 @@ func New() *Engine {
 		IdleTimeout:     60 * time.Second,
 		MaxHeaderBytes:  1 << 20, // 1 MB
 		ShutdownTimeout: 10 * time.Second,
+		JSONBinding:     defaultJSONBindingConfig(),
 	}
 	engine.RouterGroup.engine = engine
 	engine.pool.New = func() any {
@@ -182,6 +186,14 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			engine.pool.Put(c)
 			return
 		}
+	}
+	if handlers := engine.matchStaticRoute(req.Method, req.URL.Path); handlers != nil {
+		c.handlers = handlers
+		if err := c.Next(); err != nil {
+			engine.ErrorHandler(c, err)
+		}
+		engine.pool.Put(c)
+		return
 	}
 
 	// OPTIONS preflight fallback for CORS global middleware
@@ -308,14 +320,31 @@ func defaultErrorHandler(c *Context, err error) {
 	}
 	var probErr *ProblemDetails
 	if errors.As(err, &probErr) {
-		if probErr.Instance == "" {
-			probErr.Instance = c.Request.URL.Path
+		response := *probErr
+		response.Errors = append([]FieldViolation(nil), probErr.Errors...)
+		if response.Instance == "" {
+			response.Instance = c.Request.URL.Path
 		}
-		_ = c.JSON(probErr.Status, probErr)
+		if response.Status >= http.StatusInternalServerError {
+			logInternalRequestError(c, err)
+			response.Detail = "An internal server error occurred"
+			response.Errors = nil
+		}
+		response.TraceID = c.RequestID()
+		_ = c.JSON(response.Status, &response)
 		return
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
+		if httpErr.Code >= http.StatusInternalServerError {
+			logInternalRequestError(c, err)
+			_ = c.JSON(httpErr.Code, ProblemDetails{
+				Type: "https://goplusplus.dev/errors/internal-error", Title: "Internal Server Error",
+				Status: httpErr.Code, Detail: "An internal server error occurred",
+				Instance: c.Request.URL.Path, TraceID: c.RequestID(),
+			})
+			return
+		}
 		_ = c.JSON(httpErr.Code, H{
 			"code":    httpErr.Code,
 			"message": httpErr.Message,
@@ -323,11 +352,21 @@ func defaultErrorHandler(c *Context, err error) {
 		})
 		return
 	}
+	logInternalRequestError(c, err)
 	_ = c.JSON(http.StatusInternalServerError, ProblemDetails{
 		Type:     "https://goplusplus.dev/errors/internal-error",
 		Title:    "Internal Server Error",
 		Status:   http.StatusInternalServerError,
-		Detail:   err.Error(),
+		Detail:   "An internal server error occurred",
 		Instance: c.Request.URL.Path,
+		TraceID:  c.RequestID(),
 	})
+}
+
+func logInternalRequestError(c *Context, err error) {
+	slog.Error("gpp: request failed",
+		slog.String("error", err.Error()),
+		slog.String("request_id", c.RequestID()),
+		slog.String("path", c.Request.URL.Path),
+	)
 }

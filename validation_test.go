@@ -1,7 +1,6 @@
 package gpp_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/saifsilver/goplusplus"
@@ -49,37 +48,39 @@ func TestValidateSupportsStandardValidationRules(t *testing.T) {
 
 func TestValidateRejectsTypeAwareBounds(t *testing.T) {
 	tests := []struct {
-		name       string
-		mutate     func(*validationPayload)
-		wantDetail string
+		name    string
+		mutate  func(*validationPayload)
+		field   string
+		rule    string
+		message string
 	}{
 		{
 			name: "string minimum",
 			mutate: func(payload *validationPayload) {
 				payload.Username = "ab"
 			},
-			wantDetail: "Field 'Username' must contain at least 3 characters",
+			field: "Username", rule: "min", message: "must contain at least 3 characters",
 		},
 		{
 			name: "string maximum",
 			mutate: func(payload *validationPayload) {
 				payload.Username = "abcdefghijkl3"
 			},
-			wantDetail: "Field 'Username' must contain at most 12 characters",
+			field: "Username", rule: "max", message: "must contain at most 12 characters",
 		},
 		{
 			name: "numeric minimum",
 			mutate: func(payload *validationPayload) {
 				payload.Age = 17
 			},
-			wantDetail: "Field 'Age' failed validation rule 'gte=18'",
+			field: "Age", rule: "gte", message: "failed validation rule 'gte=18'",
 		},
 		{
 			name: "collection maximum",
 			mutate: func(payload *validationPayload) {
 				payload.Tags = []string{"go", "api", "web", "http"}
 			},
-			wantDetail: "Field 'Tags' must contain at most 3 items",
+			field: "Tags", rule: "max", message: "must contain at most 3 items",
 		},
 	}
 
@@ -89,7 +90,7 @@ func TestValidateRejectsTypeAwareBounds(t *testing.T) {
 			payload := validValidationPayload()
 			test.mutate(&payload)
 
-			assertProblemDetail(t, ctx.Validate(payload), 400, test.wantDetail)
+			assertViolation(t, ctx.Validate(payload), test.field, test.rule, test.message)
 		})
 	}
 }
@@ -141,8 +142,8 @@ func TestValidateSupportsNestedDiveFormatAndCrossFieldRules(t *testing.T) {
 			if !ok || problem.Status != 400 {
 				t.Fatalf("expected 400 problem details, got %v", err)
 			}
-			if !strings.Contains(problem.Detail, "Field '"+test.field+"'") {
-				t.Fatalf("expected field %q in detail, got %q", test.field, problem.Detail)
+			if len(problem.Errors) == 0 || problem.Errors[0].Field != test.field {
+				t.Fatalf("expected field %q in errors, got %+v", test.field, problem.Errors)
 			}
 		})
 	}
@@ -187,21 +188,21 @@ func TestValidateSupportsConditionalAndMapRules(t *testing.T) {
 
 	missingApproval := valid
 	missingApproval.Approval = ""
-	assertProblemDetail(t, ctx.Validate(missingApproval), 400, "Field 'Approval' is required")
+	assertViolation(t, ctx.Validate(missingApproval), "Approval", "required_if", "is required")
 
 	excludedDebugData := valid
 	excludedDebugData.DebugData = "sensitive"
-	assertProblemDetail(t, ctx.Validate(excludedDebugData), 400, "Field 'DebugData' failed validation rule 'excluded_if=Mode strict'")
+	assertViolation(t, ctx.Validate(excludedDebugData), "DebugData", "excluded_if", "failed validation rule 'excluded_if=Mode strict'")
 
 	duplicateAliases := valid
 	duplicateAliases.Aliases = []string{"same", "same"}
-	assertProblemDetail(t, ctx.Validate(duplicateAliases), 400, "Field 'Aliases' failed validation rule 'unique'")
+	assertViolation(t, ctx.Validate(duplicateAliases), "Aliases", "unique", "failed validation rule 'unique'")
 
 	invalidMapKey := valid
 	invalidMapKey.Labels = map[string]string{"Region": "ap-south"}
 	err := ctx.Validate(invalidMapKey)
 	problem, ok := err.(*gpp.ProblemDetails)
-	if !ok || !strings.Contains(problem.Detail, "Field 'Labels[Region].key'") {
+	if !ok || len(problem.Errors) == 0 || problem.Errors[0].Field != "Labels[0].key" {
 		t.Fatalf("expected deterministic map-key error, got %v", err)
 	}
 }
@@ -281,8 +282,8 @@ func TestValidateRejectsNilAndInvalidValidationConfiguration(t *testing.T) {
 	ctx := &gpp.Context{}
 	var typedNil *validationPayload
 
-	assertProblemDetail(t, ctx.Validate(nil), 400, "Validation target cannot be nil")
-	assertProblemDetail(t, ctx.Validate(typedNil), 400, "Validation target cannot be nil")
+	assertViolation(t, ctx.Validate(nil), "request", "required", "must not be nil")
+	assertViolation(t, ctx.Validate(typedNil), "request", "required", "must not be nil")
 
 	invalid := struct {
 		Value string `validate:"unsupported_rule"`
@@ -299,4 +300,18 @@ func assertProblemDetail(t *testing.T, err error, status int, detail string) {
 	if problem.Status != status || problem.Detail != detail {
 		t.Fatalf("expected status %d and detail %q, got status %d and detail %q", status, detail, problem.Status, problem.Detail)
 	}
+}
+
+func assertViolation(t *testing.T, err error, field, rule, message string) {
+	t.Helper()
+	problem, ok := err.(*gpp.ProblemDetails)
+	if !ok || problem.Status != 400 || problem.Type != "https://goplusplus.dev/errors/validation" {
+		t.Fatalf("expected validation problem, got %T: %v", err, err)
+	}
+	for _, violation := range problem.Errors {
+		if violation.Field == field && violation.Rule == rule && violation.Message == message {
+			return
+		}
+	}
+	t.Fatalf("expected violation %s/%s/%s, got %+v", field, rule, message, problem.Errors)
 }
