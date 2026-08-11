@@ -34,8 +34,9 @@ test: ## Run unit tests across all packages
 coverage: ## Run all tests and enforce the repository coverage floor
 	@echo "📊 Running test suite with coverage (minimum $(COVERAGE_MIN)%)..."
 	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
+	@rm -f $(COVERAGE_FILE) $(COVERAGE_CLEAN_FILE)
 	# Go 1.26 can interleave a shared multi-package profile under parallel package execution.
-	$(GO_ENV) go test -p=1 -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
+	$(GO_ENV) go test -count=1 -p=1 -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
 	@awk 'NF' $(COVERAGE_FILE) > $(COVERAGE_CLEAN_FILE)
 	@coverage="$$(GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) go tool cover -func=$(COVERAGE_CLEAN_FILE) | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}')"; \
 		rm -f $(COVERAGE_CLEAN_FILE); \
