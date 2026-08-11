@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	gpp "github.com/saifsilver/goplusplus"
@@ -17,7 +18,18 @@ func main() {
 	ctx := context.Background()
 
 	// Polymorphic Interface Drivers
-	var cacheStore cache.Store = cache.NewMultiLevelStore(cache.NewMemoryStore(), cache.NewRedisStore(""))
+	redisStore, err := cache.NewRedisStore(ctx, cache.RedisConfig{URL: os.Getenv("REDIS_URL")})
+	if err != nil {
+		panic(err)
+	}
+	defer redisStore.Close()
+	var cacheStore cache.Store = cache.NewMultiLevelStore(cache.NewMemoryStore(), redisStore)
+	idempotencyStore, err := middleware.NewRedisIdempotencyStore(
+		redisStore.Client(), middleware.RedisIdempotencyConfig{},
+	)
+	if err != nil {
+		panic(err)
+	}
 	var searchEngine search.Engine = search.NewElasticsearchClient(search.ESConfig{})
 	var storageProvider storage.Provider = storage.NewS3Client(storage.S3Config{Bucket: "my-bucket", Region: "us-east-1"})
 
@@ -28,6 +40,7 @@ func main() {
 		middleware.Logger(),
 		middleware.Recovery(),
 		middleware.Security(),
+		middleware.Idempotency(middleware.IdempotencyConfig{Store: idempotencyStore}),
 	)
 
 	app.POST("/api/v1/user", func(c *gpp.Context) error {

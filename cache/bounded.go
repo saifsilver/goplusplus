@@ -62,14 +62,14 @@ func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl t
 	return nil
 }
 
-func (s *BoundedMemoryStore) Get(ctx context.Context, key string) (any, bool) {
+func (s *BoundedMemoryStore) Get(ctx context.Context, key string) (any, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entry, ok := s.store[key]
 	if !ok || time.Now().After(entry.item.expiresAt) {
-		return nil, false
+		return nil, false, nil
 	}
-	return entry.item.val, true
+	return entry.item.val, true, nil
 }
 
 func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {
@@ -80,11 +80,15 @@ func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {
 }
 
 func (s *BoundedMemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
-	if val, ok := s.Get(ctx, key); ok {
+	if val, ok, err := s.Get(ctx, key); err != nil {
+		return nil, err
+	} else if ok {
 		return val, nil
 	}
 	result := s.loads.DoChan(key, func() (any, error) {
-		if val, ok := s.Get(ctx, key); ok {
+		if val, ok, err := s.Get(ctx, key); err != nil {
+			return nil, err
+		} else if ok {
 			return val, nil
 		}
 		val, err := fetcher()

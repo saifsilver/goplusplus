@@ -19,18 +19,18 @@ func TestBoundedMemoryStoreCapacity(t *testing.T) {
 	_ = store.Set(ctx, "k2", "v2", time.Minute)
 	_ = store.Set(ctx, "k3", "v3", time.Minute)
 
-	if val, ok := store.Get(ctx, "k1"); !ok || val != "v1" {
+	if val, ok := cacheGet(t, store, ctx, "k1"); !ok || val != "v1" {
 		t.Errorf("expected k1 = v1, got %v", val)
 	}
 
 	// Adding k4 should evict k1
 	_ = store.Set(ctx, "k4", "v4", time.Minute)
 
-	if _, ok := store.Get(ctx, "k1"); ok {
+	if _, ok := cacheGet(t, store, ctx, "k1"); ok {
 		t.Errorf("expected k1 to be evicted when max capacity exceeded")
 	}
 
-	if val, ok := store.Get(ctx, "k4"); !ok || val != "v4" {
+	if val, ok := cacheGet(t, store, ctx, "k4"); !ok || val != "v4" {
 		t.Errorf("expected k4 = v4, got %v", val)
 	}
 }
@@ -47,10 +47,10 @@ func TestBoundedMemoryStoreExpirationEviction(t *testing.T) {
 	// k1 is expired, so adding k3 should clean k1
 	_ = store.Set(ctx, "k3", "v3", time.Minute)
 
-	if _, ok := store.Get(ctx, "k1"); ok {
+	if _, ok := cacheGet(t, store, ctx, "k1"); ok {
 		t.Errorf("expected k1 to be expired")
 	}
-	if val, ok := store.Get(ctx, "k2"); !ok || val != "v2" {
+	if val, ok := cacheGet(t, store, ctx, "k2"); !ok || val != "v2" {
 		t.Errorf("expected k2 to be preserved, got %v", val)
 	}
 }
@@ -65,11 +65,11 @@ func TestBoundedMemoryStoreDeletePreservesCapacity(t *testing.T) {
 	_ = store.Set(ctx, "k3", "v3", time.Minute)
 	_ = store.Set(ctx, "k4", "v4", time.Minute)
 
-	if _, ok := store.Get(ctx, "k2"); ok {
+	if _, ok := cacheGet(t, store, ctx, "k2"); ok {
 		t.Fatal("expected oldest live entry k2 to be evicted")
 	}
 	for _, key := range []string{"k3", "k4"} {
-		if _, ok := store.Get(ctx, key); !ok {
+		if _, ok := cacheGet(t, store, ctx, key); !ok {
 			t.Fatalf("expected %s to remain cached", key)
 		}
 	}
@@ -127,15 +127,15 @@ func TestBoundedMemoryStorePrefix(t *testing.T) {
 
 	_ = store.InvalidatePrefix(ctx, "user:")
 
-	if _, ok := store.Get(ctx, "user:1"); ok {
+	if _, ok := cacheGet(t, store, ctx, "user:1"); ok {
 		t.Errorf("user:1 should be invalidated")
 	}
-	if val, ok := store.Get(ctx, "post:1"); !ok || val != "Hello World" {
+	if val, ok := cacheGet(t, store, ctx, "post:1"); !ok || val != "Hello World" {
 		t.Errorf("post:1 should still exist, got %v", val)
 	}
 
 	_ = store.Delete(ctx, "post:1")
-	if _, ok := store.Get(ctx, "post:1"); ok {
+	if _, ok := cacheGet(t, store, ctx, "post:1"); ok {
 		t.Errorf("post:1 should be deleted")
 	}
 
@@ -150,15 +150,15 @@ func TestBoundedMemoryStorePrefix(t *testing.T) {
 func TestMemoryStoreAndMultiLevelStore(t *testing.T) {
 	ctx := context.Background()
 	memStore := cache.NewMemoryStore()
-	redisStore := cache.NewRedisStore("redis://localhost:6379/0")
+	l2Store := cache.NewMemoryStore()
 
 	_ = memStore.Set(ctx, "key1", "val1", time.Minute)
-	if val, ok := memStore.Get(ctx, "key1"); !ok || val != "val1" {
+	if val, ok := cacheGet(t, memStore, ctx, "key1"); !ok || val != "val1" {
 		t.Errorf("expected key1 = val1")
 	}
 
 	_ = memStore.Delete(ctx, "key1")
-	if _, ok := memStore.Get(ctx, "key1"); ok {
+	if _, ok := cacheGet(t, memStore, ctx, "key1"); ok {
 		t.Errorf("key1 should be deleted")
 	}
 
@@ -172,9 +172,9 @@ func TestMemoryStoreAndMultiLevelStore(t *testing.T) {
 	_ = memStore.InvalidatePrefix(ctx, "fetch_")
 
 	// MultiLevelStore
-	multi := cache.NewMultiLevelStore(memStore, redisStore)
+	multi := cache.NewMultiLevelStore(memStore, l2Store)
 	_ = multi.Set(ctx, "multi_key", "multi_val", time.Minute)
-	if val, ok := multi.Get(ctx, "multi_key"); !ok || val != "multi_val" {
+	if val, ok := cacheGet(t, multi, ctx, "multi_key"); !ok || val != "multi_val" {
 		t.Errorf("MultiLevelStore Get failed")
 	}
 	_ = multi.Delete(ctx, "multi_key")
@@ -187,15 +187,22 @@ func TestMemoryStoreAndMultiLevelStore(t *testing.T) {
 	legacyClient := cache.NewClient()
 	_ = legacyClient.Set(ctx, "legacy", "123", time.Minute)
 
-	legacyRedis := cache.NewRedisClient("")
-	_ = legacyRedis.Set(ctx, "redis_legacy", "456", time.Minute)
 }
 
 func ExampleBoundedMemoryStore() {
 	ctx := context.Background()
 	store := cache.NewBoundedMemoryStore(100)
 	_ = store.Set(ctx, "query:123", "result_data", 5*time.Minute)
-	val, _ := store.Get(ctx, "query:123")
+	val, _, _ := store.Get(ctx, "query:123")
 	fmt.Println(val)
 	// Output: result_data
+}
+
+func cacheGet(t *testing.T, store cache.Store, ctx context.Context, key string) (any, bool) {
+	t.Helper()
+	value, found, err := store.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Get(%q): %v", key, err)
+	}
+	return value, found
 }
