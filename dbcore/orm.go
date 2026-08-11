@@ -25,6 +25,24 @@ type structMeta struct {
 
 var metaCache sync.Map // reflect.Type -> *structMeta
 
+func toSnakeCase(s string) string {
+	var builder strings.Builder
+	runes := []rune(s)
+	for i, current := range runes {
+		if i > 0 && current >= 'A' && current <= 'Z' {
+			previous := runes[i-1]
+			nextIsLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
+			previousIsLower := previous >= 'a' && previous <= 'z'
+			previousIsDigit := previous >= '0' && previous <= '9'
+			if previousIsLower || previousIsDigit || (nextIsLower && previous >= 'A' && previous <= 'Z') {
+				builder.WriteByte('_')
+			}
+		}
+		builder.WriteRune(current)
+	}
+	return strings.ToLower(builder.String())
+}
+
 func getStructMeta(t reflect.Type) *structMeta {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -84,11 +102,11 @@ func getStructMeta(t reflect.Type) *structMeta {
 
 // ORM provides a zero-SQL high-performance object-relational mapping engine.
 type ORM[T any] struct {
-	client      *Client
-	meta        *structMeta
-	tableName   string
-	whereConds  []string
-	whereArgs   []any
+	client        *Client
+	meta          *structMeta
+	tableName     string
+	whereConds    []string
+	whereArgs     []any
 	orderByClause string
 }
 

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/saifsilver/goplusplus/dbcore"
 )
 
 // RouterGroup organizes routes under a common path prefix and middleware set.
@@ -170,8 +172,7 @@ func BindResource[T any](group *RouterGroup, relativePath string, repo *dbcore.R
 
 	sub.GET("", func(c *Context) error {
 		page, limit := c.GetPageAndLimit(20)
-		whereClause := c.Query("q")
-		items, total, err := repo.FindPaginated(c.Request.Context(), page, limit, whereClause)
+		items, total, err := repo.Paginate(c.Request.Context(), page, limit)
 		if err != nil {
 			return c.InternalError(err.Error())
 		}

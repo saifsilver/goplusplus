@@ -28,6 +28,11 @@ func TestProblemDetailsRFC7807(t *testing.T) {
 		t.Errorf("expected status 403, got %d", err403.Status)
 	}
 
+	err409 := gpp.ErrConflict("Email already exists")
+	if err409.Status != http.StatusConflict {
+		t.Errorf("expected status 409, got %d", err409.Status)
+	}
+
 	err500 := gpp.ErrInternal("DB failure")
 	if err500.Status != http.StatusInternalServerError {
 		t.Errorf("expected status 500, got %d", err500.Status)

@@ -60,6 +60,16 @@ func ErrForbidden(detail string) *ProblemDetails {
 	}
 }
 
+// ErrConflict creates an RFC 7807 409 Conflict problem details error.
+func ErrConflict(detail string) *ProblemDetails {
+	return &ProblemDetails{
+		Type:   "https://goplusplus.dev/errors/conflict",
+		Title:  "Resource Conflict",
+		Status: http.StatusConflict,
+		Detail: detail,
+	}
+}
+
 // ErrInternal creates an RFC 7807 500 Internal Server Error problem details error.
 func ErrInternal(detail string) *ProblemDetails {
 	return &ProblemDetails{

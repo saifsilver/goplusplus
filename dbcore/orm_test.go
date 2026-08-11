@@ -2,6 +2,7 @@ package dbcore
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -11,6 +12,21 @@ type Product struct {
 	Name      string    `db:"name"`
 	Price     float64   `db:"price"`
 	CreatedAt time.Time `db:"created_at,auto_create"`
+}
+
+type implicitColumnNames struct {
+	ID         int64
+	APIKey     string
+	HTTPServer string
+	CreatedAt  time.Time
+}
+
+func TestGetStructMetaUsesSnakeCaseForImplicitColumns(t *testing.T) {
+	meta := getStructMeta(reflect.TypeOf(implicitColumnNames{}))
+	want := []string{"id", "api_key", "http_server", "created_at"}
+	if !reflect.DeepEqual(meta.columns, want) {
+		t.Fatalf("expected columns %v, got %v", want, meta.columns)
+	}
 }
 
 func TestORMAndTypedQueriesSuite(t *testing.T) {

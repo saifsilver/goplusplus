@@ -87,7 +87,7 @@ func BenchmarkStaticRouteMatching(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		app.ServeHTTP(w, req)
 	}
 }
@@ -104,7 +104,7 @@ func BenchmarkParamRouteMatching(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		app.ServeHTTP(w, req)
 	}
 }
