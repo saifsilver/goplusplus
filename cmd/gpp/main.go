@@ -269,7 +269,7 @@ docker:
 	_ = os.WriteFile(filepath.Join(appName, "Makefile"), []byte(makefileContent), 0644)
 
 	// 8. Dockerfile
-	dockerfileContent := fmt.Sprintf(`FROM golang:1.22-alpine AS builder
+	dockerfileContent := `FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -281,7 +281,7 @@ WORKDIR /root/
 COPY --from=builder /app/server .
 EXPOSE 8080
 CMD ["./server"]
-`)
+`
 	_ = os.WriteFile(filepath.Join(appName, "Dockerfile"), []byte(dockerfileContent), 0644)
 
 	fmt.Printf("✅ Application skeleton '%s' created successfully!\n", appName)
