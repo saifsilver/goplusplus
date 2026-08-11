@@ -1,4 +1,4 @@
-.PHONY: build test coverage format-check lint security verify install-tools install-hooks bench load-test fmt clean help
+.PHONY: build test coverage format-check lint security verify install-tools install-hooks bench load-test fmt tag clean help
 
 APP_NAME := goplusplus
 CACHE_DIR := $(CURDIR)/.cache
@@ -9,6 +9,10 @@ COVERAGE_MIN ?= 55.0
 GOVULNCHECK_VERSION := v1.6.0
 GOVULNCHECK := $(TOOLS_DIR)/govulncheck
 GO_ENV := GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) CGO_ENABLED=0
+
+# Release tagging: update and commit gpp.Version first. Use `make tag` for the
+# next patch version, or `make tag VERSION=v1.12.0` for an explicit version.
+VERSION ?=
 
 help: ## Display available commands
 	@echo "🚀 goplusplus Framework Makefile Commands:"
@@ -79,6 +83,28 @@ install-tools: ## Install pinned development and security tools locally
 install-hooks: install-tools ## Enable the tracked Git pre-push hook for this clone
 	git config core.hooksPath .githooks
 	@echo "✅ Git hooks installed. Every push will run 'make verify'."
+
+tag: ## Create an annotated release tag (next patch by default, or VERSION=vX.Y.Z)
+	@set -eu; \
+		test -z "$$(git status --porcelain)" || { echo "❌ Commit or stash working-tree changes before tagging."; exit 1; }; \
+		latest="$$(git tag --list 'v*' --sort=-v:refname | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' | head -n 1)"; \
+		requested="$(VERSION)"; \
+		if test -n "$${requested}"; then \
+			tag="$${requested#v}"; tag="v$${tag}"; \
+		else \
+			test -n "$${latest}" || latest="v0.0.0"; \
+			base="$${latest#v}"; major="$${base%%.*}"; rest="$${base#*.}"; minor="$${rest%%.*}"; patch="$${rest##*.}"; \
+			tag="v$${major}.$${minor}.$$((patch + 1))"; \
+		fi; \
+		printf '%s\n' "$${tag}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' || \
+			{ echo "❌ VERSION must be semantic version vMAJOR.MINOR.PATCH."; exit 1; }; \
+		framework_version="$$(sed -nE 's/^const Version = "([^"]+)"/\1/p' gpp.go)"; \
+		test "$${framework_version}" = "$${tag}" || \
+			{ echo "❌ gpp.Version is $${framework_version}; update and commit it as $${tag} first."; exit 1; }; \
+		! git rev-parse --verify --quiet "refs/tags/$${tag}" >/dev/null || \
+			{ echo "❌ Tag $${tag} already exists."; exit 1; }; \
+		git tag -a "$${tag}" -m "GoPlusPlus $${tag}"; \
+		echo "✅ Created $${tag}. Publish it with: git push origin $${tag}"
 
 clean: ## Clean build cache and temporary artifacts
 	@echo "🧹 Cleaning cache and temporary directories..."
