@@ -42,9 +42,9 @@ func main() {
 		}
 
 		return c.JSON(http.StatusOK, gpp.H{
-			"status":            "found",
-			"id":                id,
-			"estimated_daus":    hll.EstimateCardinality(),
+			"status":             "found",
+			"id":                 id,
+			"estimated_daus":     hll.EstimateCardinality(),
 			"trending_frequency": cms.EstimateFrequency("golang_framework"),
 		})
 	})

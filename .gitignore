@@ -2,6 +2,7 @@
 .cache/
 .tmp/
 .gopath/
+.tools/
 
 # Binary outputs
 basic
@@ -16,3 +17,4 @@ multi_protocol
 .DS_Store
 *.png
 cmd.log
+docs/plans

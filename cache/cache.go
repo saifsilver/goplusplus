@@ -152,5 +152,5 @@ func (m *MultiLevelStore) InvalidatePrefix(ctx context.Context, prefix string) e
 // Legacy Client alias for backwards compatibility
 type Client = MemoryStore
 
-func NewClient() *Client { return NewMemoryStore() }
+func NewClient() *Client                    { return NewMemoryStore() }
 func NewRedisClient(url string) *RedisStore { return NewRedisStore(url) }

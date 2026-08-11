@@ -20,8 +20,8 @@ func main() {
 
 	// 1. Initialize dbcore Database Layer (PgBouncer + Replica Routing + Slow Query Advisor)
 	db, err := dbcore.NewClient(ctx, dbcore.Config{
-		RWDSN: "postgres://app_rw:secret@pgbouncer:6432/app_rw?sslmode=require",
-		RODSN: "postgres://app_ro:secret@pgbouncer:6432/app_ro?sslmode=require",
+		RWDSN:                    "postgres://app_rw:secret@pgbouncer:6432/app_rw?sslmode=require",
+		RODSN:                    "postgres://app_ro:secret@pgbouncer:6432/app_ro?sslmode=require",
 		PgBouncerTransactionMode: true,
 		SlowQuery: dbcore.SlowQueryConfig{
 			Threshold:    100 * time.Millisecond,

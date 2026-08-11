@@ -28,11 +28,11 @@ func (m *UserModule) Register(group *gpp.RouterGroup) {
 func (m *UserModule) getProfile(c *gpp.Context) error {
 	id := c.Param("id")
 	return c.JSON(http.StatusOK, gpp.H{
-		"module":    m.Name(),
-		"user_id":   id,
-		"username":  "alex_dev",
-		"email":     "alex@example.com",
-		"status":    "active",
+		"module":   m.Name(),
+		"user_id":  id,
+		"username": "alex_dev",
+		"email":    "alex@example.com",
+		"status":   "active",
 	})
 }
 

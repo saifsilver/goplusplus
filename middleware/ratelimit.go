@@ -15,8 +15,8 @@ type clientBucket struct {
 
 // RateLimiterConfig defines rate limiting capacity and refill parameters.
 type RateLimiterConfig struct {
-	Rate       float64       // Tokens added per second
-	Capacity   float64       // Maximum token bucket capacity
+	Rate            float64       // Tokens added per second
+	Capacity        float64       // Maximum token bucket capacity
 	CleanupInterval time.Duration // Interval to clean inactive client buckets
 }
 

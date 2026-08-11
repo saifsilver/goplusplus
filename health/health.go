@@ -13,7 +13,7 @@ type CheckFunc func(ctx context.Context) error
 
 // Checker manages Kubernetes liveness and readiness health probes.
 type Checker struct {
-	mu            sync.RWMutex
+	mu              sync.RWMutex
 	readinessChecks map[string]CheckFunc
 }
 

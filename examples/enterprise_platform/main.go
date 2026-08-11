@@ -34,13 +34,13 @@ func main() {
 		tenantID := tenant.GetTenantID(c)
 
 		return c.JSON(http.StatusOK, gpp.H{
-			"status":            "online",
-			"tenant_id":         tenantID,
-			"lang":              lang,
-			"welcome_message":   welcomeMsg,
-			"sample_price_usd":  i18n.FormatCurrency(199.99, "USD"),
-			"sample_price_eur":  i18n.FormatCurrency(199.99, "EUR"),
-			"sample_price_gbp":  i18n.FormatCurrency(199.99, "GBP"),
+			"status":           "online",
+			"tenant_id":        tenantID,
+			"lang":             lang,
+			"welcome_message":  welcomeMsg,
+			"sample_price_usd": i18n.FormatCurrency(199.99, "USD"),
+			"sample_price_eur": i18n.FormatCurrency(199.99, "EUR"),
+			"sample_price_gbp": i18n.FormatCurrency(199.99, "GBP"),
 		})
 	})
 

@@ -152,6 +152,9 @@ func (o *ORM[T]) FindByID(ctx context.Context, id any) (*T, error) {
 	var entity T
 	found := false
 	err := o.client.Query(ctx, query, func(rows *sql.Rows) error {
+		if !rows.Next() {
+			return rows.Err()
+		}
 		found = true
 		return scanStruct(rows, &entity)
 	}, id)
@@ -432,6 +435,9 @@ func QueryRowTyped[T any](ctx context.Context, client *Client, query string, arg
 	var entity T
 	found := false
 	err := client.Query(ctx, query, func(rows *sql.Rows) error {
+		if !rows.Next() {
+			return rows.Err()
+		}
 		found = true
 		return scanStruct(rows, &entity)
 	}, args...)

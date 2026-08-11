@@ -522,6 +522,33 @@ Facets are disjunctive by default: a filter on `brand` is excluded while computi
 
 ---
 
+## ✅ Pre-Push Quality Gate
+
+Install the repository-managed hook once per clone:
+
+```bash
+make install-hooks
+```
+
+Every `git push` then runs the same gate as CI:
+
+```bash
+make verify
+```
+
+The gate checks:
+
+- `gofmt` formatting without modifying files
+- `go vet ./...`
+- `go test ./...` with atomic coverage collection
+- a repository-wide coverage floor (initially 55%; override with `COVERAGE_MIN=60 make coverage`)
+- `go mod verify`
+- the pinned official Go `govulncheck` vulnerability scanner
+
+The tracked hook is a developer feedback mechanism; GitHub Actions remains authoritative because local hooks can be bypassed with `--no-verify`.
+
+---
+
 ## 🧪 Ergonomic E2E Integration Testing Suite (`gpptest`)
 
 Write 3-line E2E API integration tests without starting real network sockets:
@@ -601,10 +628,37 @@ audit.Log(ctx, "user_admin", "UPDATE_ROLE", "user_42", map[string]any{"new_role"
 ---
 
 ### 13. 🌐 Enterprise Platform Suite (`i18n`, `tenant`, `auth`, `notify`)
-- **Localization (`i18n`)**: Multi-language translation & currency formatting.
+- **Internationalization (`i18n`)**: BCP 47/`Accept-Language` negotiation, runtime catalogs, CLDR plural rules, interpolation, locale-aware numbers and percentages, exact ISO 4217 money, IANA time zones, localized date/time styles, and RTL/LTR metadata.
 - **Multi-Tenancy (`tenant`)**: Tenant extraction from headers/subdomains.
 - **Security (`auth`)**: JWT authentication, RBAC, ABAC, and TOTP 2FA MFA.
 - **Notifications (`notify`)**: Email SMTP & SMS dispatch.
+
+```go
+bundle := i18n.NewBundle("en")
+_ = bundle.AddMessages("de", map[string]string{
+    "welcome %s": "Willkommen, %s",
+})
+_ = bundle.AddPlural("de", "results", i18n.PluralForms{
+    One:   "ein Ergebnis",
+    Other: "%d Ergebnisse",
+})
+app.Use(bundle.Middleware()) // ?lang=de or weighted Accept-Language
+
+// Store money as minor units, never float64: USD 1,234.56 = 123456 cents.
+price, err := i18n.FormatMoney(i18n.Money{
+    MinorUnits: 123456,
+    Currency:   "USD",
+}, "fr-FR")
+
+createdAt, err := bundle.FormatDateTime(
+    time.Now(),
+    "en-GB",
+    "Europe/London",
+    i18n.DateTimeOptions{DateStyle: i18n.Long, TimeStyle: i18n.Short},
+)
+```
+
+The middleware stores the canonical language under `i18n.ContextLanguageKey`, the full `i18n.Locale` under `i18n.ContextLocaleKey`, and emits `Content-Language` plus `Vary: Accept-Language`. English, Spanish, and French starter catalogs/date profiles are included; applications register their own messages and may add regional date-time profiles with `RegisterDateTimeProfile`.
 
 ---
 

@@ -11,11 +11,11 @@ import (
 )
 
 type AppConfig struct {
-	Port     string        `env:"PORT" default:":8080"`
-	DBURL    string        `env:"DATABASE_URL" default:"postgres://localhost:5432/app"`
-	Secret   string        `env:"JWT_SECRET" default:"super_secret_jwt_key_991823"`
-	Timeout  time.Duration `env:"TIMEOUT" default:"30s"`
-	Debug    bool          `env:"DEBUG" default:"true"`
+	Port    string        `env:"PORT" default:":8080"`
+	DBURL   string        `env:"DATABASE_URL" default:"postgres://localhost:5432/app"`
+	Secret  string        `env:"JWT_SECRET" default:"super_secret_jwt_key_991823"`
+	Timeout time.Duration `env:"TIMEOUT" default:"30s"`
+	Debug   bool          `env:"DEBUG" default:"true"`
 }
 
 func main() {

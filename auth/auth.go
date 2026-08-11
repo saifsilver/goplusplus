@@ -40,7 +40,7 @@ type TokenClaims struct {
 // GenerateToken creates a signed bearer authentication token for a user ID.
 func GenerateToken(userID int64, secret string, ttl ...time.Duration) string {
 	duration := 24 * time.Hour
-	if len(ttl) > 0 && ttl[0] > 0 {
+	if len(ttl) > 0 {
 		duration = ttl[0]
 	}
 	claims := TokenClaims{
@@ -83,7 +83,7 @@ func VerifyToken(token, secret string) (*TokenClaims, error) {
 		return nil, fmt.Errorf("failed parsing token claims: %w", err)
 	}
 
-	if time.Now().Unix() > claims.ExpiresAt {
+	if time.Now().Unix() >= claims.ExpiresAt {
 		return nil, fmt.Errorf("token expired")
 	}
 

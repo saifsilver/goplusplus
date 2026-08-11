@@ -18,9 +18,9 @@ type RouteMetadata struct {
 
 // OpenAPIGenerator automatically inspects routes and constructs live OpenAPI 3.0 specs.
 type OpenAPIGenerator struct {
-	mu     sync.RWMutex
-	routes []RouteMetadata
-	Title  string
+	mu      sync.RWMutex
+	routes  []RouteMetadata
+	Title   string
 	Version string
 }
 

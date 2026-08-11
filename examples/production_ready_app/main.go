@@ -40,9 +40,9 @@ func main() {
 	app := gpp.New()
 
 	app.Use(
-		tracing.Middleware(),       // OpenTelemetry TraceID injection
-		versioning.Middleware("v1"),// API versioning negotiation
-		middleware.Observability(), // Prometheus request metrics
+		tracing.Middleware(),        // OpenTelemetry TraceID injection
+		versioning.Middleware("v1"), // API versioning negotiation
+		middleware.Observability(),  // Prometheus request metrics
 		middleware.Logger(),
 		middleware.Recovery(),
 		middleware.Security(),

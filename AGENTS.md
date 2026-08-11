@@ -160,6 +160,8 @@ adminGroup.Use(
 | **Database Facet Backend** | `search.NewDatabaseBackend(db, search.DatabaseConfig{})` |
 | **REST Search Binding** | `gpp.BindSearchResource(v1, "/products/search", products)` |
 | **GraphQL Search Binding** | `gpp.BindSearchGraphQL(app, "productSearch", registry)` |
+| **Install Pre-Push Gate** | `make install-hooks` |
+| **Test/Coverage/Security Gate** | `make verify` |
 | **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
 | **Password Hashing & JWT** | `hash := auth.HashPassword(pass, secret)` & `token := auth.GenerateToken(userID, secret)` |
 | **ULID (K-Sortable)** | `id.NewULID()` → `"01JEX89K2P3M4N5Q6R7S8T9VWX"` |
@@ -189,3 +191,7 @@ adminGroup.Use(
 | **Auto-GraphQL** | `app.GET("/graphql", app.AutoGraphQLPlayground("/graphql"))` |
 | **K8s Health** | `app.GET("/healthz/readiness", healthChecker.Readiness())` |
 | **Embedded React SPA** | `app.StaticFS("/", distFS)` (with automatic `index.html` fallback) |
+| **Language Negotiation** | `bundle := i18n.NewBundle("en")` & `app.Use(bundle.Middleware())` |
+| **Translation & Plurals** | `bundle.Translate(lang, "key", args...)` & `bundle.AddPlural(...)` |
+| **Exact Localized Money** | `i18n.FormatMoney(i18n.Money{MinorUnits: 1099, Currency: "USD"}, "fr-FR")` |
+| **Localized Date/Time** | `bundle.FormatDateTime(at, "en-GB", "Europe/London", options)` |

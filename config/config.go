@@ -307,4 +307,3 @@ func toSnakeCase(s string) string {
 	}
 	return strings.ToUpper(builder.String())
 }
-

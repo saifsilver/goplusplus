@@ -6,15 +6,15 @@ import (
 )
 
 type Manager struct {
-	mu     sync.RWMutex
-	flags  map[string]bool
+	mu    sync.RWMutex
+	flags map[string]bool
 }
 
 // NewManager creates a new feature flag manager.
 func NewManager() *Manager {
 	return &Manager{
 		flags: map[string]bool{
-			"new_checkout_v2": true,
+			"new_checkout_v2":    true,
 			"ai_recommendations": false,
 		},
 	}

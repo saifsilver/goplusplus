@@ -67,11 +67,11 @@ func NewULID() string {
 // ──────────────────────────────────────────────
 
 const (
-	snowflakeEpoch       = int64(1704067200000) // 2024-01-01 00:00:00 UTC in millis
-	snowflakeNodeBits    = 10
+	snowflakeEpoch        = int64(1704067200000) // 2024-01-01 00:00:00 UTC in millis
+	snowflakeNodeBits     = 10
 	snowflakeSequenceBits = 12
-	snowflakeMaxNode     = (1 << snowflakeNodeBits) - 1
-	snowflakeMaxSequence = (1 << snowflakeSequenceBits) - 1
+	snowflakeMaxNode      = (1 << snowflakeNodeBits) - 1
+	snowflakeMaxSequence  = (1 << snowflakeSequenceBits) - 1
 )
 
 // SnowflakeNode generates unique 64-bit integer IDs using a Snowflake-style algorithm.
@@ -148,6 +148,12 @@ func NewPrefixed(prefix string) string {
 //  UUID v4 (Random) & UUID v7 (Time-Ordered)
 // ──────────────────────────────────────────────
 
+var (
+	uuidV7Mu       sync.Mutex
+	uuidV7LastMs   uint64
+	uuidV7Sequence uint16
+)
+
 // NewUUID generates a standard RFC 4122 UUID v4 (128-bit random).
 func NewUUID() string {
 	var buf [16]byte
@@ -164,10 +170,26 @@ func NewUUID() string {
 
 // NewUUIDv7 generates an RFC 9562 UUID v7 (time-ordered, k-sortable).
 func NewUUIDv7() string {
+	uuidV7Mu.Lock()
+	defer uuidV7Mu.Unlock()
+
 	var buf [16]byte
 	_, _ = io.ReadFull(rand.Reader, buf[:])
 
 	nowMs := uint64(time.Now().UnixMilli())
+	if nowMs <= uuidV7LastMs {
+		nowMs = uuidV7LastMs
+		uuidV7Sequence++
+		if uuidV7Sequence > 0x0fff {
+			for nowMs <= uuidV7LastMs {
+				nowMs = uint64(time.Now().UnixMilli())
+			}
+			uuidV7Sequence = binary.BigEndian.Uint16(buf[6:8]) & 0x0fff
+		}
+	} else {
+		uuidV7Sequence = binary.BigEndian.Uint16(buf[6:8]) & 0x0fff
+	}
+	uuidV7LastMs = nowMs
 
 	// Encode 48-bit Unix timestamp in milliseconds (bytes 0-5)
 	buf[0] = byte(nowMs >> 40)
@@ -177,8 +199,9 @@ func NewUUIDv7() string {
 	buf[4] = byte(nowMs >> 8)
 	buf[5] = byte(nowMs)
 
-	// Set version 7 bits (byte 6, upper nibble)
-	buf[6] = (buf[6] & 0x0f) | 0x70
+	// Encode the monotonic 12-bit rand_a field and version 7 bits.
+	buf[6] = byte(uuidV7Sequence>>8) | 0x70
+	buf[7] = byte(uuidV7Sequence)
 	// Set variant 10 bits (byte 8, upper 2 bits)
 	buf[8] = (buf[8] & 0x3f) | 0x80
 

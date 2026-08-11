@@ -41,16 +41,16 @@ func DefaultSlowQueryConfig() SlowQueryConfig {
 
 // SlowQueryEvent represents a structured log event generated when a query exceeds the configured duration threshold.
 type SlowQueryEvent struct {
-	Role        string        `json:"role"`
-	Operation   string        `json:"operation"`
-	QueryName   string        `json:"query_name"`
-	DurationMS  int64         `json:"duration_ms"`
-	ThresholdMS int64         `json:"threshold_ms"`
-	Fingerprint string        `json:"fingerprint"`
-	ArgsCount   int           `json:"args_count"`
-	SQL         string        `json:"sql,omitempty"`
-	Suggestions []string      `json:"suggestions"`
-	Error       string        `json:"error,omitempty"`
+	Role        string   `json:"role"`
+	Operation   string   `json:"operation"`
+	QueryName   string   `json:"query_name"`
+	DurationMS  int64    `json:"duration_ms"`
+	ThresholdMS int64    `json:"threshold_ms"`
+	Fingerprint string   `json:"fingerprint"`
+	ArgsCount   int      `json:"args_count"`
+	SQL         string   `json:"sql,omitempty"`
+	Suggestions []string `json:"suggestions"`
+	Error       string   `json:"error,omitempty"`
 }
 
 var (
