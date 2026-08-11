@@ -182,6 +182,7 @@ adminGroup.Use(
 | **Auto DB Migrations** | `dbcore.AutoMigrate(ctx, db, migrations...)` |
 | **DB Seeder & Faker** | `seed.Run(ctx, db, seed.Plan{Table: "users", Count: 50, Factory: ...})` |
 | **Binary CLI Flag Handler** | `app.HandleCLI(gpp.CLIOptions{Client: db, Migrations: ..., SeedPlans: ...})` |
+| **Interactive CLI Wizard** | `gpp` (in interactive TTY) or `gpp -i` |
 | **CLI App Skeleton Generator** | `gpp new <app_name>` |
 | **CLI Code Generators** | `gpp gen <module|middleware|migration|handler> <name>` |
 | **CLI Service Extraction** | `gpp extract service <module> --module <go_module_path>` |

@@ -334,3 +334,41 @@ func TestCLIGenerators(t *testing.T) {
 		t.Errorf("generateHandler failed to create handlers/user_profile.go")
 	}
 }
+
+func TestInteractiveCLI(t *testing.T) {
+	tempDir := t.TempDir()
+	origWd, _ := os.Getwd()
+	_ = os.Chdir(tempDir)
+	defer func() { _ = os.Chdir(origWd) }()
+
+	// Test Choice 9 (Version)
+	input := strings.NewReader("9\n")
+	var output strings.Builder
+	if err := runInteractiveCLI(input, &output); err != nil {
+		t.Fatalf("runInteractiveCLI version: %v", err)
+	}
+	if !strings.Contains(output.String(), "goplusplus (gpp) CLI Tool") {
+		t.Errorf("expected version output, got %q", output.String())
+	}
+
+	// Test Choice 10 (Exit)
+	inputExit := strings.NewReader("10\n")
+	var outputExit strings.Builder
+	if err := runInteractiveCLI(inputExit, &outputExit); err != nil {
+		t.Fatalf("runInteractiveCLI exit: %v", err)
+	}
+	if !strings.Contains(outputExit.String(), "Goodbye!") {
+		t.Errorf("expected exit message, got %q", outputExit.String())
+	}
+
+	// Test Choice 2 (Generate Module)
+	inputGen := strings.NewReader("2\ninvoices\n")
+	var outputGen strings.Builder
+	if err := runInteractiveCLI(inputGen, &outputGen); err != nil {
+		t.Fatalf("runInteractiveCLI generate module: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join("internal", "modules", "invoices", "module.go")); os.IsNotExist(err) {
+		t.Errorf("interactive generator failed to create internal/modules/invoices/module.go")
+	}
+}
+

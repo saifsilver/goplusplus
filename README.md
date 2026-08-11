@@ -649,6 +649,13 @@ Install the CLI tool to scaffold a compile-tested modular monolith with explicit
 # Install CLI
 go install github.com/saifsilver/goplusplus/cmd/gpp@latest
 
+# Launch Vite-style Interactive Wizard (when run without arguments in a TTY terminal)
+gpp
+
+# Or force interactive mode in any shell
+gpp -i
+
+# Direct CLI command mode:
 # Scaffold a new app (the module flag is recommended for published projects)
 gpp new myapp --module github.com/acme/myapp
 

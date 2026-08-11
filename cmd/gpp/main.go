@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,12 +23,18 @@ func main() {
 
 func runCLI(args []string) error {
 	if len(args) == 0 {
+		if isTerminal(os.Stdin) {
+			return runInteractiveCLI(os.Stdin, os.Stdout)
+		}
 		printUsage()
 		return nil
 	}
 
 	command := args[0]
 	switch command {
+	case "interactive", "-i", "--interactive":
+		return runInteractiveCLI(os.Stdin, os.Stdout)
+
 	case "new":
 		options, err := parseScaffoldOptions(args[1:])
 		if err != nil {
@@ -76,9 +85,168 @@ func runCLI(args []string) error {
 	return nil
 }
 
+func isTerminal(f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+func runInteractiveCLI(r io.Reader, w io.Writer) error {
+	scanner := bufio.NewScanner(r)
+	fmt.Fprintf(w, "\n🚀 Welcome to goplusplus (gpp) Interactive CLI %s\n\n", cliVersion)
+	fmt.Fprintln(w, "Select an action:")
+	fmt.Fprintln(w, "  1) 🚀 Scaffold new project (gpp new)")
+	fmt.Fprintln(w, "  2) 📦 Generate domain module (gpp gen module)")
+	fmt.Fprintln(w, "  3) 🛡️ Generate custom middleware (gpp gen middleware)")
+	fmt.Fprintln(w, "  4) 🗄️ Generate SQL migration (gpp gen migration)")
+	fmt.Fprintln(w, "  5) ⚡ Generate HTTP handler (gpp gen handler)")
+	fmt.Fprintln(w, "  6) ☁️ Generate AWS ECS/RDS Terraform (gpp gen terraform aws)")
+	fmt.Fprintln(w, "  7) 🐳 Generate Docker Compose VPS hosting (gpp gen hosting standard)")
+	fmt.Fprintln(w, "  8) 🧩 Extract module as microservice (gpp extract service)")
+	fmt.Fprintln(w, "  9) ℹ️  Display version")
+	fmt.Fprintln(w, " 10) ❌ Exit")
+	fmt.Fprintln(w)
+
+	choice, err := promptInput(scanner, w, "Enter choice [1-10]", "1")
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+
+	switch choice {
+	case "1":
+		appName, err := promptInput(scanner, w, "App name / directory (e.g. myapp)", "")
+		if err != nil || appName == "" {
+			return errors.New("app name is required")
+		}
+		modPath, err := promptInput(scanner, w, "Go module import path", appName)
+		if err != nil {
+			return err
+		}
+		options, err := parseScaffoldOptions([]string{appName, "--module", modPath})
+		if err != nil {
+			return err
+		}
+		return scaffoldApp(options)
+
+	case "2":
+		modName, err := promptInput(scanner, w, "Module name (e.g. orders)", "")
+		if err != nil || modName == "" {
+			return errors.New("module name is required")
+		}
+		if !generatorNamePattern.MatchString(modName) {
+			return fmt.Errorf("generator name %q must be a Go identifier", modName)
+		}
+		return generateModule(modName)
+
+	case "3":
+		mwName, err := promptInput(scanner, w, "Middleware name (e.g. auth)", "")
+		if err != nil || mwName == "" {
+			return errors.New("middleware name is required")
+		}
+		if !generatorNamePattern.MatchString(mwName) {
+			return fmt.Errorf("generator name %q must be a Go identifier", mwName)
+		}
+		return generateMiddleware(mwName)
+
+	case "4":
+		migName, err := promptInput(scanner, w, "Migration name (e.g. create_users_table)", "")
+		if err != nil || migName == "" {
+			return errors.New("migration name is required")
+		}
+		if !generatorNamePattern.MatchString(migName) {
+			return fmt.Errorf("generator name %q must be a Go identifier", migName)
+		}
+		return generateMigration(migName)
+
+	case "5":
+		hName, err := promptInput(scanner, w, "Handler name (e.g. get_user)", "")
+		if err != nil || hName == "" {
+			return errors.New("handler name is required")
+		}
+		if !generatorNamePattern.MatchString(hName) {
+			return fmt.Errorf("generator name %q must be a Go identifier", hName)
+		}
+		return generateHandler(hName)
+
+	case "6":
+		return generateTerraform("aws")
+
+	case "7":
+		return generateHosting("standard")
+
+	case "8":
+		capability, err := promptInput(scanner, w, "Module to extract (e.g. users)", "")
+		if err != nil || capability == "" {
+			return errors.New("module name is required")
+		}
+		modPath, err := promptInput(scanner, w, "Microservice Go module path (e.g. example.com/acme/users-service)", "")
+		if err != nil || modPath == "" {
+			return errors.New("microservice Go module path is required")
+		}
+		outDir, err := promptInput(scanner, w, "Output directory", filepath.Join("services", capability))
+		if err != nil {
+			return err
+		}
+		routePath, err := promptInput(scanner, w, "HTTP route prefix", "/api/v1/"+capability)
+		if err != nil {
+			return err
+		}
+		options, err := parseExtractOptions([]string{
+			"service", capability,
+			"--module", modPath,
+			"--output", outDir,
+			"--route", routePath,
+		})
+		if err != nil {
+			return err
+		}
+		return extractService(options)
+
+	case "9":
+		fmt.Fprintf(w, "goplusplus (gpp) CLI Tool %s\n", cliVersion)
+		return nil
+
+	case "10":
+		fmt.Fprintln(w, "Goodbye! 👋")
+		return nil
+
+	default:
+		return fmt.Errorf("invalid choice %q", choice)
+	}
+}
+
+func promptInput(scanner *bufio.Scanner, writer io.Writer, promptText, defaultValue string) (string, error) {
+	if defaultValue != "" {
+		fmt.Fprintf(writer, "%s [%s]: ", promptText, defaultValue)
+	} else {
+		fmt.Fprintf(writer, "%s: ", promptText)
+	}
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", io.EOF
+	}
+	val := strings.TrimSpace(scanner.Text())
+	if val == "" {
+		val = defaultValue
+	}
+	return val, nil
+}
+
 func printUsage() {
 	fmt.Printf("🚀 goplusplus (gpp) CLI Tool %s\n", cliVersion)
 	fmt.Println("Usage:")
+	fmt.Println("  gpp                           - Launch interactive wizard (when run in TTY terminal)")
+	fmt.Println("  gpp -i, --interactive         - Force interactive wizard mode")
 	fmt.Println("  gpp new <app_name> [--module <path>] - Scaffold a scalable modular-monolith application")
 	fmt.Println("  gpp gen module <name>         - Generate a new domain module in internal/modules/<name>")
 	fmt.Println("  gpp gen middleware <name>     - Generate custom middleware in middleware/<name>.go")
