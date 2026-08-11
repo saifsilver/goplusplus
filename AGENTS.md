@@ -149,6 +149,9 @@ adminGroup.Use(
 | **Bind & Validate** | `c.BindAndValidate(&struct)` |
 | **Path Parameter** | `c.Param("id")` |
 | **Query Parameter** | `c.Query("q")` or `c.QueryDefault("page", "1")` |
+| **Get Typed Context Key** | `userID := c.GetInt64("user_id")` or `id := c.GetInt("id")` |
+| **Get Context Any Value** | `val := c.GetAny("key")` or `val := c.Value("key")` |
+| **Get Generic Context Value** | `val, ok := gpp.GetAs[User](c, "user")` |
 | **404 Error** | `return gpp.ErrNotFound("Item not found")` |
 | **400 Error** | `return gpp.ErrBadRequest("Invalid field")` |
 | **401 Error** | `return gpp.ErrUnauthorized("Token expired")` |

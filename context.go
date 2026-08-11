@@ -192,14 +192,156 @@ func (c *Context) MustGet(key string) any {
 	return val
 }
 
-// GetString retrieves a stored string value from context storage.
+// GetAny retrieves a stored value by key as a single return value (nil if not found).
+func (c *Context) GetAny(key string) any {
+	val, _ := c.Get(key)
+	return val
+}
+
+// Value retrieves a stored value by key as a single return value (nil if not found), compatible with context.Context interface style.
+func (c *Context) Value(key string) any {
+	return c.GetAny(key)
+}
+
+// GetString retrieves a stored string value from context storage, converting numeric/boolean values if necessary.
 func (c *Context) GetString(key string) string {
-	if val, ok := c.Get(key); ok {
-		if s, ok := val.(string); ok {
-			return s
+	val, ok := c.Get(key)
+	if !ok || val == nil {
+		return ""
+	}
+	switch v := val.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// GetInt64 retrieves a stored value converted to int64. Returns 0 if not found or unconvertible.
+func (c *Context) GetInt64(key string) int64 {
+	val, ok := c.Get(key)
+	if !ok || val == nil {
+		return 0
+	}
+	switch v := val.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case uint:
+		return int64(v)
+	case uint64:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case uint8:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	case string:
+		if i, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return i
 		}
 	}
-	return ""
+	return 0
+}
+
+// GetInt retrieves a stored value converted to int. Returns 0 if not found or unconvertible.
+func (c *Context) GetInt(key string) int {
+	return int(c.GetInt64(key))
+}
+
+// GetFloat64 retrieves a stored value converted to float64. Returns 0.0 if not found or unconvertible.
+func (c *Context) GetFloat64(key string) float64 {
+	val, ok := c.Get(key)
+	if !ok || val == nil {
+		return 0
+	}
+	switch v := val.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case uint64:
+		return float64(v)
+	case string:
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return 0
+}
+
+// GetBool retrieves a stored value converted to bool. Returns false if not found or unconvertible.
+func (c *Context) GetBool(key string) bool {
+	val, ok := c.Get(key)
+	if !ok || val == nil {
+		return false
+	}
+	switch v := val.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case string:
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return false
+}
+
+// GetAs retrieves a context value typed as T if present and matching type T.
+func GetAs[T any](c *Context, key string) (T, bool) {
+	var zero T
+	val, ok := c.Get(key)
+	if !ok || val == nil {
+		return zero, false
+	}
+	typed, ok := val.(T)
+	if !ok {
+		return zero, false
+	}
+	return typed, true
+}
+
+// GetOrDefault retrieves a context value typed as T, or returns defaultValue if not set or wrong type.
+func GetOrDefault[T any](c *Context, key string, defaultValue T) T {
+	if val, ok := GetAs[T](c, key); ok {
+		return val
+	}
+	return defaultValue
+}
+
+// MustGetAs retrieves a context value typed as T or panics if not set or wrong type.
+func MustGetAs[T any](c *Context, key string) T {
+	val, ok := GetAs[T](c, key)
+	if !ok {
+		panic(fmt.Sprintf("gpp.Context: key '%s' does not exist or type mismatch", key))
+	}
+	return val
 }
 
 // SetHeader sets an HTTP response header.

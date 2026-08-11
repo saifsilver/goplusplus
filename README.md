@@ -126,45 +126,60 @@ err = db.ParallelQuery(ctx,
 
 ---
 
-### 4. ⚛️ Embedded React / Vite / Next.js SPA Serving
+### 4. 🔐 Type-Safe Context Storage & Retrieval
+Store request-scoped variables and safely retrieve them with automatic type coercion or generic inference:
+
+```go
+app.Use(func(c *gpp.Context) error {
+    c.Set("user_id", int64(1001))
+    c.Set("role", "admin")
+    return c.Next()
+})
+
+app.GET("/profile", func(c *gpp.Context) error {
+    // 1. Direct Typed Getters (Safe conversion across int/int64/float64/string)
+    userID := c.GetInt64("user_id") // 1001
+    role   := c.GetString("role")   // "admin"
+
+    // 2. Single-Value any Getter (Prevents Go syntax multi-value assertion errors)
+    val := c.GetAny("user_id").(int64)
+
+    // 3. Generic Getter Functions (Go 1.18+)
+    userID, ok := gpp.GetAs[int64](c, "user_id")
+    tenantID   := gpp.GetOrDefault[string](c, "tenant_id", "default_tenant")
+
+    return c.JSON(200, gpp.H{"user_id": userID, "role": role})
+})
+```
+
+---
+
+### 5. ⚛️ Embedded React / Vite / Next.js SPA Serving
 Serve embedded React/Vite/Next.js frontend assets directly out of a single Go binary with **Automatic Client-Side SPA Fallback Routing**:
 
 ```go
-//go:embed all:dist
-var reactDistFS embed.FS
+// Embed built static assets directly into the binary
+//go:embed dist/*
+var distFS embed.FS
 
-func main() {
-    app := gpp.New()
-
-    app.GET("/api/v1/users", getUsersHandler)
-
-    // 1-Liner: Auto-detects dist/build folder & serves React SPA on "/" with index.html fallback
-    app.StaticEmbed("/", reactDistFS)
-
-    app.Listen(":8080")
-}
+app.StaticFS("/", distFS) // Serves assets and falls back to index.html for SPA routes!
 ```
 
 ---
 
-### 5. 🌐 Triple-Auto Generators (Swagger, GraphQL, gRPC)
-Zero-configuration automatic protocol documentation and multiplexing:
+### 6. 🌐 Triple-Auto Generators (Swagger, GraphQL, gRPC)
+Auto-generate interactive Swagger OpenAPI documentation, GraphQL Playgrounds, and gRPC Web endpoints with zero manual schema setup:
 
 ```go
-// Auto-Generated OpenAPI 3.0 & Interactive Swagger UI
 app.GET("/swagger", app.AutoSwaggerUI())
-
-// Auto-Generated GraphQL Schema & Interactive Playground
 app.GET("/graphql", app.AutoGraphQLPlayground("/graphql"))
 app.POST("/graphql", app.AutoGraphQLHandler())
-
-// Prometheus Metrics Endpoint
-app.GET("/metrics", middleware.Prometheus())
+app.POST("/grpc/*", app.AutoGRPCHandler())
 ```
 
 ---
 
-### 6. 🏛️ Modular Monolith & Microservices Architecture
+### 7. 🏛️ Modular Monolith & Microservices Architecture
 Organize domain features into clean `gpp.Module` implementations:
 
 ```go
