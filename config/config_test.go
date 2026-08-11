@@ -16,6 +16,7 @@ type TestAppConfig struct {
 	MaxConns  int           `default:"100"`
 	Debug     bool          `default:"true"`
 	Ratio     float64       `default:"0.75"`
+	MaxUint   uint64        `default:"500"`
 }
 
 type TaggedConfig struct {
@@ -60,6 +61,9 @@ func TestMustLoadAndAutoSnakeCase(t *testing.T) {
 	if cfg.Ratio != 0.75 {
 		t.Errorf("expected Ratio 0.75, got %f", cfg.Ratio)
 	}
+	if cfg.MaxUint != 500 {
+		t.Errorf("expected MaxUint 500, got %d", cfg.MaxUint)
+	}
 }
 
 func TestTaggedConfig(t *testing.T) {
@@ -78,7 +82,7 @@ func TestTaggedConfig(t *testing.T) {
 func TestLoadDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	envFile := filepath.Join(tmpDir, ".env")
-	content := []byte("PORT=5000\nJWT_SECRET=env-file-secret\n")
+	content := []byte("PORT=5000\nJWT_SECRET=env-file-secret\n# Comment line\n\nINVALID_LINE\n")
 
 	if err := os.WriteFile(envFile, content, 0644); err != nil {
 		t.Fatalf("failed to write temp .env file: %v", err)
@@ -97,9 +101,17 @@ func TestLoadDotEnvFile(t *testing.T) {
 	}
 }
 
-func TestHelpers(t *testing.T) {
+func TestHelpersAndGetters(t *testing.T) {
 	os.Setenv("APP_NAME", "go++")
-	defer os.Unsetenv("APP_NAME")
+	os.Setenv("APP_PORT", "8080")
+	os.Setenv("APP_DEBUG", "true")
+	os.Setenv("APP_TIMEOUT", "10s")
+	defer func() {
+		os.Unsetenv("APP_NAME")
+		os.Unsetenv("APP_PORT")
+		os.Unsetenv("APP_DEBUG")
+		os.Unsetenv("APP_TIMEOUT")
+	}()
 
 	if Get("APP_NAME") != "go++" {
 		t.Errorf("Get failed")
@@ -107,8 +119,34 @@ func TestHelpers(t *testing.T) {
 	if Env("APP_NAME") != "go++" {
 		t.Errorf("Env failed")
 	}
+	if GetInt("APP_PORT", 3000) != 8080 {
+		t.Errorf("GetInt failed")
+	}
+	if GetInt("NON_EXISTENT", 9000) != 9000 {
+		t.Errorf("GetInt default failed")
+	}
+	if !GetBool("APP_DEBUG", false) {
+		t.Errorf("GetBool failed")
+	}
+	if GetBool("NON_EXISTENT", true) != true {
+		t.Errorf("GetBool default failed")
+	}
+	if GetDuration("APP_TIMEOUT", time.Minute) != 10*time.Second {
+		t.Errorf("GetDuration failed")
+	}
+	if GetDuration("NON_EXISTENT", 5*time.Second) != 5*time.Second {
+		t.Errorf("GetDuration default failed")
+	}
+
 	if MaskSecret("secret123456") != "sec...456" {
-		t.Errorf("MaskSecret failed")
+		t.Errorf("MaskSecret long failed")
+	}
+	if MaskSecret("short") != "******" {
+		t.Errorf("MaskSecret short failed")
+	}
+
+	if err := Unmarshal("not_a_pointer_to_struct"); err == nil {
+		t.Errorf("expected error for non-pointer struct target")
 	}
 }
 
@@ -146,4 +184,3 @@ func TestAdvancedTagOptions(t *testing.T) {
 		t.Errorf("expected Required 'value', got '%s'", cfg2.Required)
 	}
 }
-

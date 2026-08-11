@@ -69,6 +69,62 @@ func TestBoundedMemoryStorePrefix(t *testing.T) {
 	if val, ok := store.Get(ctx, "post:1"); !ok || val != "Hello World" {
 		t.Errorf("post:1 should still exist, got %v", val)
 	}
+
+	_ = store.Delete(ctx, "post:1")
+	if _, ok := store.Get(ctx, "post:1"); ok {
+		t.Errorf("post:1 should be deleted")
+	}
+
+	val, err := store.GetOrSet(ctx, "computed", time.Minute, func() (any, error) {
+		return "computed_val", nil
+	})
+	if err != nil || val != "computed_val" {
+		t.Errorf("GetOrSet failed: %v", err)
+	}
+}
+
+func TestMemoryStoreAndMultiLevelStore(t *testing.T) {
+	ctx := context.Background()
+	memStore := cache.NewMemoryStore()
+	redisStore := cache.NewRedisStore("redis://localhost:6379/0")
+
+	_ = memStore.Set(ctx, "key1", "val1", time.Minute)
+	if val, ok := memStore.Get(ctx, "key1"); !ok || val != "val1" {
+		t.Errorf("expected key1 = val1")
+	}
+
+	_ = memStore.Delete(ctx, "key1")
+	if _, ok := memStore.Get(ctx, "key1"); ok {
+		t.Errorf("key1 should be deleted")
+	}
+
+	val, err := memStore.GetOrSet(ctx, "fetch_key", time.Minute, func() (any, error) {
+		return "fetched", nil
+	})
+	if err != nil || val != "fetched" {
+		t.Errorf("GetOrSet failed")
+	}
+
+	_ = memStore.InvalidatePrefix(ctx, "fetch_")
+
+	// MultiLevelStore
+	multi := cache.NewMultiLevelStore(memStore, redisStore)
+	_ = multi.Set(ctx, "multi_key", "multi_val", time.Minute)
+	if val, ok := multi.Get(ctx, "multi_key"); !ok || val != "multi_val" {
+		t.Errorf("MultiLevelStore Get failed")
+	}
+	_ = multi.Delete(ctx, "multi_key")
+	_ = multi.InvalidatePrefix(ctx, "multi_")
+
+	_, _ = multi.GetOrSet(ctx, "multi_fetch", time.Minute, func() (any, error) {
+		return "multi_fetched", nil
+	})
+
+	legacyClient := cache.NewClient()
+	_ = legacyClient.Set(ctx, "legacy", "123", time.Minute)
+
+	legacyRedis := cache.NewRedisClient("")
+	_ = legacyRedis.Set(ctx, "redis_legacy", "456", time.Minute)
 }
 
 func ExampleBoundedMemoryStore() {
