@@ -178,19 +178,25 @@ func (driverResult) LastInsertId() (int64, error) { return 1, nil }
 func (driverResult) RowsAffected() (int64, error) { return 1, nil }
 
 // Zero-dependency in-memory database driver implementation
-type inMemDriver struct{}
-
-func (d *inMemDriver) Open(name string) (driver.Conn, error) {
-	return &inMemConn{tables: make(map[string][]map[string]any)}, nil
-}
-
-type inMemConn struct {
+type inMemStore struct {
 	mu     sync.RWMutex
 	tables map[string][]map[string]any
 }
 
+var globalInMemStore = &inMemStore{
+	tables: make(map[string][]map[string]any),
+}
+
+type inMemDriver struct{}
+
+func (d *inMemDriver) Open(name string) (driver.Conn, error) {
+	return &inMemConn{}, nil
+}
+
+type inMemConn struct{}
+
 func (c *inMemConn) Prepare(query string) (driver.Stmt, error) {
-	return &inMemStmt{conn: c, query: query}, nil
+	return &inMemStmt{query: query}, nil
 }
 func (c *inMemConn) Close() error              { return nil }
 func (c *inMemConn) Begin() (driver.Tx, error) { return &inMemTx{}, nil }
@@ -201,7 +207,6 @@ func (tx *inMemTx) Commit() error   { return nil }
 func (tx *inMemTx) Rollback() error { return nil }
 
 type inMemStmt struct {
-	conn  *inMemConn
 	query string
 }
 
@@ -212,8 +217,8 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 	q := strings.TrimSpace(s.query)
 	qUpper := strings.ToUpper(q)
 
-	s.conn.mu.Lock()
-	defer s.conn.mu.Unlock()
+	globalInMemStore.mu.Lock()
+	defer globalInMemStore.mu.Unlock()
 
 	if strings.HasPrefix(qUpper, "CREATE TABLE") {
 		parts := strings.Fields(q)
@@ -222,8 +227,8 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 			if strings.EqualFold(parts[2], "IF") && len(parts) >= 6 {
 				tName = strings.Trim(parts[5], "`\"();")
 			}
-			if s.conn.tables[tName] == nil {
-				s.conn.tables[tName] = make([]map[string]any, 0)
+			if globalInMemStore.tables[tName] == nil {
+				globalInMemStore.tables[tName] = make([]map[string]any, 0)
 			}
 		}
 	} else if strings.HasPrefix(qUpper, "INSERT INTO") {
@@ -234,13 +239,13 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 			for i, arg := range args {
 				rec[fmt.Sprintf("col_%d", i)] = arg
 			}
-			s.conn.tables[tName] = append(s.conn.tables[tName], rec)
+			globalInMemStore.tables[tName] = append(globalInMemStore.tables[tName], rec)
 		}
 	} else if strings.HasPrefix(qUpper, "DELETE FROM") {
 		parts := strings.Fields(q)
 		if len(parts) >= 3 {
 			tName := strings.Trim(parts[2], "`\"();")
-			s.conn.tables[tName] = make([]map[string]any, 0)
+			globalInMemStore.tables[tName] = make([]map[string]any, 0)
 		}
 	}
 	return driverResult{}, nil
@@ -250,8 +255,8 @@ func (s *inMemStmt) Query(args []driver.Value) (driver.Rows, error) {
 	q := strings.TrimSpace(s.query)
 	qUpper := strings.ToUpper(q)
 
-	s.conn.mu.RLock()
-	defer s.conn.mu.RUnlock()
+	globalInMemStore.mu.RLock()
+	defer globalInMemStore.mu.RUnlock()
 
 	if strings.Contains(qUpper, "COUNT(*)") {
 		count := 0
@@ -259,7 +264,7 @@ func (s *inMemStmt) Query(args []driver.Value) (driver.Rows, error) {
 		for i, p := range parts {
 			if p == "FROM" && i+1 < len(parts) {
 				tName := strings.Trim(parts[i+1], "`\"();")
-				count = len(s.conn.tables[tName])
+				count = len(globalInMemStore.tables[tName])
 			}
 		}
 		return &inMemRows{
