@@ -312,29 +312,39 @@ func (o *ORM[T]) Delete(ctx context.Context, entity *T) error {
 }
 
 // AutoMigrate creates the database table automatically if it does not exist based on struct fields.
+// Supports full SQL type mapping: SMALLINT, INTEGER, BIGINT, REAL, DOUBLE PRECISION, BOOLEAN, TIMESTAMP, TEXT.
 func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
 	sqlCols := make([]string, 0)
 
+	structType := reflect.TypeOf((*T)(nil)).Elem()
+	if structType.Kind() == reflect.Ptr {
+		structType = structType.Elem()
+	}
+
 	for _, colName := range o.meta.columns {
 		idx := o.meta.fieldMap[colName]
-		colType := "TEXT"
+		fieldType := structType.Field(idx).Type
 
-		field := reflect.TypeOf((*T)(nil)).Elem()
-		if field.Kind() == reflect.Ptr {
-			field = field.Elem()
-		}
-		fieldType := field.Field(idx).Type
+		colType := goTypeToSQL(fieldType)
 
-		switch fieldType.Kind() {
-		case reflect.Int, reflect.Int64, reflect.Int32:
-			colType = "INTEGER"
-		case reflect.Float64, reflect.Float32:
-			colType = "REAL"
-		case reflect.Bool:
-			colType = "BOOLEAN"
-		}
+		isPK := colName == o.meta.pkColumn
+		if isPK {
+			// For auto_id string strategies (ulid, uuid, prefix), PK is TEXT
+			if o.meta.autoIDStrategy != "" {
+				switch o.meta.autoIDStrategy {
+				case "snowflake":
+					colType = "BIGINT"
+				default:
+					colType = "TEXT" // ulid, uuid, uuidv7, prefix:xxx all produce strings
+				}
+			}
 
-		if colName == o.meta.pkColumn {
+			// Auto-increment for integer PKs without auto_id strategy
+			if o.meta.autoIDStrategy == "" && isIntegerKind(fieldType.Kind()) {
+				sqlCols = append(sqlCols, fmt.Sprintf("%s %s PRIMARY KEY AUTOINCREMENT", colName, colType))
+				continue
+			}
+
 			sqlCols = append(sqlCols, fmt.Sprintf("%s %s PRIMARY KEY", colName, colType))
 		} else {
 			sqlCols = append(sqlCols, fmt.Sprintf("%s %s", colName, colType))
@@ -344,6 +354,43 @@ func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
 	createSQL := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", o.tableName, strings.Join(sqlCols, ", "))
 	_, err := o.client.Exec(ctx, createSQL)
 	return err
+}
+
+// goTypeToSQL maps a Go reflect.Type to the most appropriate SQL column type.
+func goTypeToSQL(t reflect.Type) string {
+	// Handle time.Time specifically
+	if t == reflect.TypeOf(time.Time{}) {
+		return "TIMESTAMP"
+	}
+
+	switch t.Kind() {
+	case reflect.Int8, reflect.Int16, reflect.Uint8:
+		return "SMALLINT"
+	case reflect.Int, reflect.Int32, reflect.Uint16:
+		return "INTEGER"
+	case reflect.Int64, reflect.Uint32, reflect.Uint, reflect.Uint64:
+		return "BIGINT"
+	case reflect.Float32:
+		return "REAL"
+	case reflect.Float64:
+		return "DOUBLE PRECISION"
+	case reflect.Bool:
+		return "BOOLEAN"
+	case reflect.String:
+		return "TEXT"
+	default:
+		return "TEXT"
+	}
+}
+
+// isIntegerKind returns true if the reflect.Kind is any integer type.
+func isIntegerKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
+	}
+	return false
 }
 
 // QueryTyped executes a raw SQL query and automatically maps matching rows into []T without manual scanning loops.
