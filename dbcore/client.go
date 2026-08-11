@@ -67,6 +67,11 @@ func (c *Client) Exec(ctx context.Context, query string, args ...any) (sql.Resul
 	return res, nil
 }
 
+// ExecContext implements database/sql-style execution for framework adapters that accept a SQLDatabase.
+func (c *Client) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return c.Exec(ctx, query, args...)
+}
+
 // ExecIdempotent executes a retry-safe write statement with automatic retry logic.
 func (c *Client) ExecIdempotent(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.Exec(ctx, query, args...)
@@ -135,6 +140,18 @@ func (c *Client) Query(ctx context.Context, query string, fn func(rows *sql.Rows
 		return fn(rows)
 	}
 	return nil
+}
+
+// QueryContext implements database/sql-style querying while preserving slow-query observability.
+// The caller owns and must close the returned rows.
+func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	start := time.Now()
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	LogSlowQuery(ctx, c.cfg, "ro", "read_many", query, time.Since(start), len(args), err)
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // InTx executes a function inside a primary database transaction.

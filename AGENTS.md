@@ -156,6 +156,10 @@ adminGroup.Use(
 | **Get Generic Context Value** | `val, ok := gpp.GetAs[User](c, "user")` |
 | **Zero-SQL ORM Engine** | `orm := dbcore.NewORM[User](client)` & `orm.Save(ctx, &user)` |
 | **Typed Raw SQL Query** | `users, err := dbcore.QueryTyped[User](ctx, client, "SELECT * FROM users WHERE status=$1", "active")` |
+| **Dynamic Attribute Search** | `resource.Search(ctx, search.SearchRequest{Filters: ..., Facets: ...})` |
+| **Database Facet Backend** | `search.NewDatabaseBackend(db, search.DatabaseConfig{})` |
+| **REST Search Binding** | `gpp.BindSearchResource(v1, "/products/search", products)` |
+| **GraphQL Search Binding** | `gpp.BindSearchGraphQL(app, "productSearch", registry)` |
 | **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
 | **Password Hashing & JWT** | `hash := auth.HashPassword(pass, secret)` & `token := auth.GenerateToken(userID, secret)` |
 | **ULID (K-Sortable)** | `id.NewULID()` → `"01JEX89K2P3M4N5Q6R7S8T9VWX"` |

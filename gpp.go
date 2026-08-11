@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/graphql-go/graphql"
 	"github.com/saifsilver/goplusplus/dbcore"
 	"github.com/saifsilver/goplusplus/dbcore/seed"
 )
@@ -37,17 +38,20 @@ type Module interface {
 // Engine is the central core of the go++ framework, serving as router, HTTP server wrapper, and handler.
 type Engine struct {
 	RouterGroup
-	trees            map[string]*node
-	pool             sync.Pool
-	openapi          *OpenAPIGenerator
-	NotFoundHandler  HandlerFunc
-	ErrorHandler     func(c *Context, err error)
-	Server           *http.Server
-	ReadTimeout      time.Duration
-	WriteTimeout     time.Duration
-	IdleTimeout      time.Duration
-	MaxHeaderBytes   int
-	ShutdownTimeout  time.Duration
+	trees           map[string]*node
+	pool            sync.Pool
+	openapi         *OpenAPIGenerator
+	graphqlMu       sync.RWMutex
+	graphqlFields   graphql.Fields
+	graphqlSchema   *graphql.Schema
+	NotFoundHandler HandlerFunc
+	ErrorHandler    func(c *Context, err error)
+	Server          *http.Server
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
+	MaxHeaderBytes  int
+	ShutdownTimeout time.Duration
 }
 
 // New creates a fresh instance of the go++ engine with high-performance default configurations.
@@ -58,6 +62,7 @@ func New() *Engine {
 		},
 		trees:           make(map[string]*node),
 		openapi:         newOpenAPIGenerator(),
+		graphqlFields:   make(graphql.Fields),
 		ReadTimeout:     15 * time.Second,
 		WriteTimeout:    15 * time.Second,
 		IdleTimeout:     60 * time.Second,

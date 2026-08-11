@@ -415,6 +415,111 @@ kafkaWorker := queue.NewKafkaWorker([]string{"localhost:9092"}, "events")
 rabbitBus   := pubsub.NewRabbitMQBus("amqp://localhost:5672")
 ```
 
+## 🔎 Dynamic Attributes, Filters & Faceted Search
+
+Search resources declare every queryable dynamic attribute once. The same typed request contract powers Go, REST, and GraphQL, so clients cannot inject database columns, SQL fragments, or backend-specific query DSL.
+
+```go
+schema, err := search.NewSchema(
+	search.AttributeDefinition{
+		Key: "title", Type: search.AttributeString, Searchable: true,
+	},
+	search.AttributeDefinition{
+		Key: "brand", Type: search.AttributeEnum,
+		Filterable: true, Facetable: true,
+		EnumValues: []string{"Nike", "Adidas"},
+	},
+	search.AttributeDefinition{
+		Key: "price", Type: search.AttributeDecimal,
+		Filterable: true, Sortable: true,
+	},
+	search.AttributeDefinition{
+		Key: "tenant_id", Type: search.AttributeString, Filterable: true,
+	},
+)
+if err != nil {
+	return err
+}
+
+backend, err := search.NewDatabaseBackend(db, search.DatabaseConfig{})
+if err != nil {
+	return err
+}
+if err := backend.Setup(ctx); err != nil {
+	return err
+}
+
+products, err := search.NewResource("products", schema, backend)
+if err != nil {
+	return err
+}
+```
+
+For tenant- or authorization-scoped resources, add mandatory filters with `search.WithScope`. Scope filters always constrain hits and facet counts, including disjunctive facets:
+
+```go
+products, err := search.NewResource("products", schema, backend,
+	search.WithScope(func(ctx context.Context) ([]search.Filter, error) {
+		return []search.Filter{
+			{Field: "tenant_id", Operator: search.OperatorEqual, Value: tenantIDFrom(ctx)},
+		}, nil
+	}),
+)
+```
+
+Index and search dynamic documents:
+
+```go
+_ = products.Index(ctx, search.Document{
+	ID: "prod_1",
+	Attributes: map[string]any{
+		"title": "Road running shoe",
+		"brand": "Nike",
+		"price": 120.00,
+	},
+})
+
+result, err := products.Search(ctx, search.SearchRequest{
+	Query: "running",
+	Filters: []search.Filter{
+		{Field: "price", Operator: search.OperatorBetween, Value: []float64{50, 150}},
+	},
+	Facets: []search.FacetRequest{
+		{Field: "brand", Mode: search.FacetDisjunctive},
+	},
+})
+```
+
+Bind a REST endpoint and the schema-validated GraphQL field:
+
+```go
+registry, _ := search.NewRegistry(products)
+
+gpp.BindSearchResource(v1, "/products/search", products)
+_ = gpp.BindSearchGraphQL(app, "productSearch", registry)
+
+app.POST("/graphql", app.AutoGraphQLHandler())
+```
+
+```graphql
+query ProductSearch($request: SearchRequestInput!) {
+  productSearch(resource: "products", request: $request) {
+    total
+    nextCursor
+    items { id score attributes }
+    facets { field buckets { value count } }
+  }
+}
+```
+
+Choose the backend explicitly per resource:
+
+- **Database (default):** use for exact transactional results, moderate query volume, simple full-text search, and minimal operational overhead. The built-in backend targets PostgreSQL JSONB with GIN indexes.
+- **Elasticsearch/OpenSearch:** use when relevance ranking, typo tolerance, stemming, synonyms, autocomplete, high-volume aggregations, or many multi-value facets justify a separate eventually-consistent index.
+- **Hybrid:** use Elasticsearch for ranking/facets and hydrate authorized records from the database. Tenant and authorization filters must be applied before both hits and facet counts are calculated.
+
+Facets are disjunctive by default: a filter on `brand` is excluded while computing the `brand` buckets, preserving alternative brand counts. Set `Mode: search.FacetConjunctive` when selected filters should narrow their own facet.
+
 ---
 
 ## 🧪 Ergonomic E2E Integration Testing Suite (`gpptest`)
