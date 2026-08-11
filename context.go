@@ -554,6 +554,11 @@ func (c *Context) Data(statusCode int, contentType string, data []byte) error {
 	return err
 }
 
+// HTML renders an HTML string response with text/html content type.
+func (c *Context) HTML(statusCode int, html string) error {
+	return c.Data(statusCode, "text/html; charset=utf-8", []byte(html))
+}
+
 // File serves a static file from disk.
 func (c *Context) File(filepath string) error {
 	http.ServeFile(c.Writer, c.Request, filepath)
