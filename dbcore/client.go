@@ -223,9 +223,9 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 	if strings.HasPrefix(qUpper, "CREATE TABLE") {
 		parts := strings.Fields(q)
 		if len(parts) >= 3 {
-			tName := strings.Trim(parts[2], "`\"();")
+			tName := strings.ToLower(strings.Trim(parts[2], "`\"();"))
 			if strings.EqualFold(parts[2], "IF") && len(parts) >= 6 {
-				tName = strings.Trim(parts[5], "`\"();")
+				tName = strings.ToLower(strings.Trim(parts[5], "`\"();"))
 			}
 			if globalInMemStore.tables[tName] == nil {
 				globalInMemStore.tables[tName] = make([]map[string]any, 0)
@@ -234,7 +234,7 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 	} else if strings.HasPrefix(qUpper, "INSERT INTO") {
 		parts := strings.Fields(q)
 		if len(parts) >= 3 {
-			tName := strings.Trim(parts[2], "`\"();")
+			tName := strings.ToLower(strings.Trim(parts[2], "`\"();"))
 			rec := make(map[string]any)
 			for i, arg := range args {
 				rec[fmt.Sprintf("col_%d", i)] = arg
@@ -244,7 +244,7 @@ func (s *inMemStmt) Exec(args []driver.Value) (driver.Result, error) {
 	} else if strings.HasPrefix(qUpper, "DELETE FROM") {
 		parts := strings.Fields(q)
 		if len(parts) >= 3 {
-			tName := strings.Trim(parts[2], "`\"();")
+			tName := strings.ToLower(strings.Trim(parts[2], "`\"();"))
 			globalInMemStore.tables[tName] = make([]map[string]any, 0)
 		}
 	}
@@ -263,7 +263,7 @@ func (s *inMemStmt) Query(args []driver.Value) (driver.Rows, error) {
 		parts := strings.Fields(qUpper)
 		for i, p := range parts {
 			if p == "FROM" && i+1 < len(parts) {
-				tName := strings.Trim(parts[i+1], "`\"();")
+				tName := strings.ToLower(strings.Trim(parts[i+1], "`\"();"))
 				count = len(globalInMemStore.tables[tName])
 			}
 		}

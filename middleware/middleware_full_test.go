@@ -3,6 +3,7 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/saifsilver/goplusplus"
@@ -23,7 +24,7 @@ func TestRequestIDAndObservability(t *testing.T) {
 		if c.RequestID() == "" {
 			t.Errorf("expected RequestID to be populated")
 		}
-		return c.String(http.StatusOK, "pong")
+		return c.String(http.StatusOK, "%s", "pong")
 	})
 
 	reqPing := httptest.NewRequest(http.MethodGet, "/ping", nil)
@@ -80,5 +81,71 @@ func TestIdempotencyAndSingleflight(t *testing.T) {
 	}
 	if counter != 1 {
 		t.Errorf("expected counter to be 1 due to idempotency, got %d", counter)
+	}
+}
+
+func TestSwaggerAndGraphQLMiddleware(t *testing.T) {
+	app := gpp.New()
+
+	app.GET("/swagger", middleware.SwaggerUI(`{"openapi":"3.0.0"}`))
+	app.GET("/graphql", middleware.GraphQLPlayground("/graphql"))
+	app.POST("/graphql", middleware.GraphQLHandler(func(query string, variables map[string]any) (any, error) {
+		return map[string]string{"hero": "Superman"}, nil
+	}))
+
+	// Swagger UI test
+	reqSwag := httptest.NewRequest(http.MethodGet, "/swagger", nil)
+	wSwag := httptest.NewRecorder()
+	app.ServeHTTP(wSwag, reqSwag)
+	if wSwag.Code != http.StatusOK {
+		t.Errorf("expected Swagger UI 200, got %d", wSwag.Code)
+	}
+
+	// GraphQL Playground test
+	reqPlay := httptest.NewRequest(http.MethodGet, "/graphql", nil)
+	wPlay := httptest.NewRecorder()
+	app.ServeHTTP(wPlay, reqPlay)
+	if wPlay.Code != http.StatusOK {
+		t.Errorf("expected GraphQL Playground 200, got %d", wPlay.Code)
+	}
+
+	// GraphQL Handler test
+	reqGQL := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(`{"query":"{ hero }"}`))
+	reqGQL.Header.Set("Content-Type", "application/json")
+	wGQL := httptest.NewRecorder()
+	app.ServeHTTP(wGQL, reqGQL)
+	if wGQL.Code != http.StatusOK {
+		t.Errorf("expected GraphQL Handler 200, got %d", wGQL.Code)
+	}
+}
+
+func TestGRPCMultiplexMiddleware(t *testing.T) {
+	app := gpp.New()
+	dummyHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("grpc_ok"))
+	})
+	app.Use(middleware.GRPCMultiplex(dummyHandler))
+
+	app.GET("/api", func(c *gpp.Context) error {
+		return c.String(http.StatusOK, "%s", "http_ok")
+	})
+
+	// Standard HTTP request
+	req1 := httptest.NewRequest(http.MethodGet, "/api", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+	if w1.Body.String() != "http_ok" {
+		t.Errorf("expected http_ok, got %s", w1.Body.String())
+	}
+
+	// Simulated gRPC request over HTTP/2
+	req2 := httptest.NewRequest(http.MethodPost, "/api", nil)
+	req2.ProtoMajor = 2
+	req2.Header.Set("Content-Type", "application/grpc")
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+	if w2.Body.String() != "grpc_ok" {
+		t.Errorf("expected grpc_ok, got %s", w2.Body.String())
 	}
 }
