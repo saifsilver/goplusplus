@@ -63,13 +63,25 @@ func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl t
 }
 
 func (s *BoundedMemoryStore) Get(ctx context.Context, key string) (any, bool, error) {
+	value, found, _, err := s.getWithTTL(ctx, key)
+	return value, found, err
+}
+
+func (s *BoundedMemoryStore) getWithTTL(ctx context.Context, key string) (any, bool, time.Duration, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, 0, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entry, ok := s.store[key]
-	if !ok || time.Now().After(entry.item.expiresAt) {
-		return nil, false, nil
+	if !ok {
+		return nil, false, 0, nil
 	}
-	return entry.item.val, true, nil
+	remaining := time.Until(entry.item.expiresAt)
+	if remaining <= 0 {
+		return nil, false, 0, nil
+	}
+	return entry.item.val, true, remaining, nil
 }
 
 func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {

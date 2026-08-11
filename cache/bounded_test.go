@@ -77,8 +77,9 @@ func TestBoundedMemoryStoreDeletePreservesCapacity(t *testing.T) {
 
 func TestCacheGetOrSetCoalescesConcurrentFetches(t *testing.T) {
 	tests := map[string]cache.Store{
-		"memory":  cache.NewMemoryStore(),
-		"bounded": cache.NewBoundedMemoryStore(10),
+		"memory":     cache.NewMemoryStore(),
+		"bounded":    cache.NewBoundedMemoryStore(10),
+		"multilevel": cache.NewMultiLevelStore(cache.NewMemoryStore(), cache.NewMemoryStore()),
 	}
 	for name, store := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -187,6 +188,23 @@ func TestMemoryStoreAndMultiLevelStore(t *testing.T) {
 	legacyClient := cache.NewClient()
 	_ = legacyClient.Set(ctx, "legacy", "123", time.Minute)
 
+}
+
+func TestMultiLevelBackfillDoesNotOutliveL2(t *testing.T) {
+	ctx := context.Background()
+	l1 := cache.NewMemoryStore()
+	l2 := cache.NewMemoryStore()
+	multi := cache.NewMultiLevelStore(l1, l2)
+	if err := l2.Set(ctx, "short-lived", "value", 20*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if value, found := cacheGet(t, multi, ctx, "short-lived"); !found || value != "value" {
+		t.Fatalf("initial Get = %v, %v", value, found)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if _, found := cacheGet(t, multi, ctx, "short-lived"); found {
+		t.Fatal("L1 served a value after its L2 entry expired")
+	}
 }
 
 func ExampleBoundedMemoryStore() {

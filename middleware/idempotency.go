@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
 	"time"
@@ -361,3 +363,25 @@ func (r *responseRecorder) commitHeader() {
 	}
 	r.wroteHeader = true
 }
+
+func (r *responseRecorder) Flush() {
+	r.overflow = true
+	if !r.wroteHeader {
+		r.WriteHeader(r.statusCode)
+	}
+	_ = http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	r.overflow = true
+	return http.NewResponseController(r.ResponseWriter).Hijack()
+}
+
+func (r *responseRecorder) Push(target string, options *http.PushOptions) error {
+	if pusher, ok := r.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, options)
+	}
+	return http.ErrNotSupported
+}
+
+func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }

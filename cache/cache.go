@@ -47,13 +47,22 @@ func (s *MemoryStore) Set(ctx context.Context, key string, val any, ttl time.Dur
 }
 
 func (s *MemoryStore) Get(ctx context.Context, key string) (any, bool, error) {
+	value, found, _, err := s.getWithTTL(ctx, key)
+	return value, found, err
+}
+
+func (s *MemoryStore) getWithTTL(ctx context.Context, key string) (any, bool, time.Duration, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, 0, err
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	item, ok := s.store[key]
-	if !ok || time.Now().After(item.expiresAt) {
-		return nil, false, nil
+	remaining := time.Until(item.expiresAt)
+	if !ok || remaining <= 0 {
+		return nil, false, 0, nil
 	}
-	return item.val, true, nil
+	return item.val, true, remaining, nil
 }
 
 func (s *MemoryStore) Delete(ctx context.Context, key string) error {
@@ -102,8 +111,9 @@ func (s *MemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error
 
 // MultiLevelStore provides L1 Memory + L2 Redis tiered caching.
 type MultiLevelStore struct {
-	l1 Store
-	l2 Store
+	l1    Store
+	l2    Store
+	loads singleflight.Group
 }
 
 // NewMultiLevelStore creates a multi-level tiered cache store.
@@ -117,15 +127,29 @@ func (m *MultiLevelStore) Get(ctx context.Context, key string) (any, bool, error
 	} else if ok {
 		return val, true, nil
 	}
-	if val, ok, err := m.l2.Get(ctx, key); err != nil {
+	if val, ok, remaining, err := getWithRemainingTTL(ctx, m.l2, key); err != nil {
 		return nil, false, fmt.Errorf("cache: read L2: %w", err)
 	} else if ok {
-		if err := m.l1.Set(ctx, key, val, 5*time.Minute); err != nil {
-			return nil, false, fmt.Errorf("cache: populate L1: %w", err)
+		if remaining > 0 {
+			if err := m.l1.Set(ctx, key, val, min(remaining, 5*time.Minute)); err != nil {
+				return nil, false, fmt.Errorf("cache: populate L1: %w", err)
+			}
 		}
 		return val, true, nil
 	}
 	return nil, false, nil
+}
+
+type remainingTTLStore interface {
+	getWithTTL(context.Context, string) (any, bool, time.Duration, error)
+}
+
+func getWithRemainingTTL(ctx context.Context, store Store, key string) (any, bool, time.Duration, error) {
+	if source, ok := store.(remainingTTLStore); ok {
+		return source.getWithTTL(ctx, key)
+	}
+	value, found, err := store.Get(ctx, key)
+	return value, found, 0, err
 }
 
 func (m *MultiLevelStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
@@ -148,11 +172,27 @@ func (m *MultiLevelStore) GetOrSet(ctx context.Context, key string, ttl time.Dur
 	} else if ok {
 		return val, nil
 	}
-	val, err := fetcher()
-	if err != nil {
-		return nil, err
+	result := m.loads.DoChan(key, func() (any, error) {
+		if val, ok, err := m.Get(ctx, key); err != nil {
+			return nil, err
+		} else if ok {
+			return val, nil
+		}
+		val, err := m.l2.GetOrSet(ctx, key, ttl, fetcher)
+		if err != nil {
+			return nil, err
+		}
+		if err := m.l1.Set(ctx, key, val, ttl); err != nil {
+			return nil, fmt.Errorf("cache: populate L1: %w", err)
+		}
+		return val, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case value := <-result:
+		return value.Val, value.Err
 	}
-	return val, m.Set(ctx, key, val, ttl)
 }
 
 func (m *MultiLevelStore) InvalidatePrefix(ctx context.Context, prefix string) error {

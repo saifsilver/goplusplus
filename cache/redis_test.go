@@ -2,6 +2,8 @@ package cache_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -104,6 +106,64 @@ func TestRedisStoreGetOrSetCoalescesLocalFetches(t *testing.T) {
 	}
 }
 
+func TestRedisStoreGetOrSetCoalescesAcrossInstances(t *testing.T) {
+	server := miniredis.RunT(t)
+	storeA := newRedisStoreForServer(t, server, "distributed:")
+	storeB := newRedisStoreForServer(t, server, "distributed:")
+	var fetches atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	fetcher := func() (any, error) {
+		fetches.Add(1)
+		once.Do(func() { close(started) })
+		<-release
+		return "value", nil
+	}
+
+	results := make(chan error, 2)
+	for _, store := range []*cache.RedisStore{storeA, storeB} {
+		go func() {
+			value, err := store.GetOrSet(context.Background(), "shared", time.Minute, fetcher)
+			if err == nil && value != "value" {
+				err = fmt.Errorf("value = %v", value)
+			}
+			results <- err
+		}()
+	}
+	<-started
+	time.Sleep(20 * time.Millisecond)
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("fetcher called %d times before release, want 1", got)
+	}
+	close(release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("fetcher called %d times, want 1", got)
+	}
+}
+
+func TestRedisStoreGetOrSetReleasesLockAfterFetcherFailure(t *testing.T) {
+	server := miniredis.RunT(t)
+	storeA := newRedisStoreForServer(t, server, "failure-release:")
+	storeB := newRedisStoreForServer(t, server, "failure-release:")
+	if _, err := storeA.GetOrSet(context.Background(), "shared", time.Minute, func() (any, error) {
+		return nil, errors.New("fetch failed")
+	}); err == nil {
+		t.Fatal("fetcher failure was not returned")
+	}
+	value, err := storeB.GetOrSet(context.Background(), "shared", time.Minute, func() (any, error) {
+		return "recovered", nil
+	})
+	if err != nil || value != "recovered" {
+		t.Fatalf("second GetOrSet = %v, %v", value, err)
+	}
+}
+
 func TestRedisStoreSurfacesConnectionFailures(t *testing.T) {
 	server, store := newRedisStore(t, "failure:")
 	server.Close()
@@ -122,11 +182,16 @@ func TestRedisStoreRequiresExplicitURL(t *testing.T) {
 func newRedisStore(t *testing.T, prefix string) (*miniredis.Miniredis, *cache.RedisStore) {
 	t.Helper()
 	server := miniredis.RunT(t)
+	return server, newRedisStoreForServer(t, server, prefix)
+}
+
+func newRedisStoreForServer(t *testing.T, server *miniredis.Miniredis, prefix string) *cache.RedisStore {
+	t.Helper()
 	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
 	t.Cleanup(func() { _ = client.Close() })
 	store, err := cache.NewRedisStoreFromClient(context.Background(), client, cache.RedisConfig{Prefix: prefix})
 	if err != nil {
 		t.Fatalf("NewRedisStoreFromClient: %v", err)
 	}
-	return server, store
+	return store
 }

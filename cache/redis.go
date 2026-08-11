@@ -2,10 +2,15 @@ package cache
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -16,7 +21,28 @@ const (
 	defaultRedisCachePrefix = "gpp:cache:"
 	defaultRedisScanCount   = int64(100)
 	defaultRedisPingTimeout = 2 * time.Second
+	defaultRedisLoadLockTTL = 30 * time.Second
+	defaultRedisLoadPoll    = 25 * time.Millisecond
 	maxCacheKeyBytes        = 1024
+)
+
+var (
+	errRedisLoadLockLost = errors.New("cache: Redis load lock ownership lost")
+	redisCompareDelete   = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0`)
+	redisCompareExpire = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("PEXPIRE", KEYS[1], ARGV[2])
+end
+return 0`)
+	redisCompareOwner = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return 1
+end
+return 0`)
 )
 
 // Codec serializes values stored by RedisStore.
@@ -49,16 +75,20 @@ type RedisConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	ScanCount    int64
+	LoadLockTTL  time.Duration
+	LoadPoll     time.Duration
 }
 
 // RedisStore implements Store using the official Redis Go client.
 type RedisStore struct {
-	client     redis.UniversalClient
-	prefix     string
-	codec      Codec
-	scanCount  int64
-	ownsClient bool
-	loads      singleflight.Group
+	client      redis.UniversalClient
+	prefix      string
+	codec       Codec
+	scanCount   int64
+	loadLockTTL time.Duration
+	loadPoll    time.Duration
+	ownsClient  bool
+	loads       singleflight.Group
 }
 
 // NewRedisStore creates and verifies a Redis-backed cache. URL is required and
@@ -97,6 +127,9 @@ func newRedisStore(ctx context.Context, client redis.UniversalClient, config Red
 		return nil, errors.New("cache: Redis client is required")
 	}
 	config = normalizeRedisConfig(config)
+	if config.LoadLockTTL < 100*time.Millisecond {
+		return nil, errors.New("cache: Redis load lock TTL must be at least 100 milliseconds")
+	}
 	pingCtx, cancel := context.WithTimeout(ctx, config.PingTimeout)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
@@ -104,7 +137,8 @@ func newRedisStore(ctx context.Context, client redis.UniversalClient, config Red
 	}
 	return &RedisStore{
 		client: client, prefix: config.Prefix, codec: config.Codec,
-		scanCount: config.ScanCount, ownsClient: ownsClient,
+		scanCount: config.ScanCount, loadLockTTL: config.LoadLockTTL,
+		loadPoll: config.LoadPoll, ownsClient: ownsClient,
 	}, nil
 }
 
@@ -120,6 +154,12 @@ func normalizeRedisConfig(config RedisConfig) RedisConfig {
 	}
 	if config.ScanCount <= 0 {
 		config.ScanCount = defaultRedisScanCount
+	}
+	if config.LoadLockTTL <= 0 {
+		config.LoadLockTTL = defaultRedisLoadLockTTL
+	}
+	if config.LoadPoll <= 0 {
+		config.LoadPoll = defaultRedisLoadPoll
 	}
 	return config
 }
@@ -155,6 +195,32 @@ func (s *RedisStore) Get(ctx context.Context, key string) (any, bool, error) {
 	return value, true, nil
 }
 
+func (s *RedisStore) getWithTTL(ctx context.Context, key string) (any, bool, time.Duration, error) {
+	redisKey, err := s.redisKey(key)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	pipe := s.client.Pipeline()
+	get := pipe.Get(ctx, redisKey)
+	ttl := pipe.PTTL(ctx, redisKey)
+	_, err = pipe.Exec(ctx)
+	if errors.Is(get.Err(), redis.Nil) {
+		return nil, false, 0, nil
+	}
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("cache: read Redis value with TTL: %w", err)
+	}
+	value, err := s.codec.Unmarshal([]byte(get.Val()))
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("cache: decode Redis value: %w", err)
+	}
+	remaining, err := ttl.Result()
+	if err != nil {
+		return nil, false, 0, fmt.Errorf("cache: read Redis TTL: %w", err)
+	}
+	return value, true, remaining, nil
+}
+
 func (s *RedisStore) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	if ttl <= 0 {
 		return errors.New("cache: Redis TTL must be positive")
@@ -185,22 +251,20 @@ func (s *RedisStore) Delete(ctx context.Context, key string) error {
 }
 
 func (s *RedisStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
+	if ttl <= 0 {
+		return nil, errors.New("cache: Redis TTL must be positive")
+	}
+	redisKey, err := s.redisKey(key)
+	if err != nil {
+		return nil, err
+	}
 	if value, found, err := s.Get(ctx, key); err != nil {
 		return nil, err
 	} else if found {
 		return value, nil
 	}
 	result := s.loads.DoChan(key, func() (any, error) {
-		if value, found, err := s.Get(ctx, key); err != nil {
-			return nil, err
-		} else if found {
-			return value, nil
-		}
-		value, err := fetcher()
-		if err != nil {
-			return nil, err
-		}
-		return value, s.Set(ctx, key, value, ttl)
+		return s.getOrSetDistributed(ctx, key, redisKey, ttl, fetcher)
 	})
 	select {
 	case <-ctx.Done():
@@ -208,6 +272,167 @@ func (s *RedisStore) GetOrSet(ctx context.Context, key string, ttl time.Duration
 	case value := <-result:
 		return value.Val, value.Err
 	}
+}
+
+func (s *RedisStore) getOrSetDistributed(
+	ctx context.Context, key, redisKey string, ttl time.Duration, fetcher func() (any, error),
+) (any, error) {
+	lockKey := s.loadLockKey(redisKey)
+	for {
+		if value, found, err := s.Get(ctx, key); err != nil {
+			return nil, err
+		} else if found {
+			return value, nil
+		}
+		lock, acquired, err := s.acquireLoadLock(ctx, lockKey)
+		if err != nil {
+			return nil, err
+		}
+		if acquired {
+			return s.fetchWithLoadLock(ctx, key, redisKey, lock, ttl, fetcher)
+		}
+		if err := waitForRedisLoad(ctx, s.loadPoll); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func (s *RedisStore) fetchWithLoadLock(
+	ctx context.Context,
+	key, redisKey string,
+	lock *redisLoadLock,
+	ttl time.Duration,
+	fetcher func() (any, error),
+) (any, error) {
+	lock.start(ctx)
+	defer lock.release()
+	if value, found, err := s.Get(ctx, key); err != nil {
+		return nil, err
+	} else if found {
+		return value, nil
+	}
+	value, err := fetcher()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.setIfLoadLockOwner(ctx, redisKey, lock, value, ttl); err != nil {
+		if errors.Is(err, errRedisLoadLockLost) {
+			if cached, found, getErr := s.Get(ctx, key); getErr == nil && found {
+				return cached, nil
+			}
+		}
+		return nil, err
+	}
+	return value, nil
+}
+
+func (s *RedisStore) acquireLoadLock(ctx context.Context, key string) (*redisLoadLock, bool, error) {
+	token, err := newRedisLoadToken()
+	if err != nil {
+		return nil, false, err
+	}
+	acquired, err := s.client.SetNX(ctx, key, token, s.loadLockTTL).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("cache: acquire Redis load lock: %w", err)
+	}
+	return &redisLoadLock{store: s, key: key, token: token}, acquired, nil
+}
+
+func (s *RedisStore) setIfLoadLockOwner(
+	ctx context.Context, redisKey string, lock *redisLoadLock, value any, ttl time.Duration,
+) error {
+	data, err := s.codec.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("cache: encode Redis value: %w", err)
+	}
+	result, err := redisCompareOwner.Run(ctx, s.client, []string{lock.key}, lock.token).Int()
+	if err != nil {
+		return fmt.Errorf("cache: verify Redis load lock: %w", err)
+	}
+	if result != 1 {
+		return errRedisLoadLockLost
+	}
+	if err := s.client.Set(ctx, redisKey, data, ttl).Err(); err != nil {
+		return fmt.Errorf("cache: store Redis load result: %w", err)
+	}
+	return nil
+}
+
+func (s *RedisStore) loadLockKey(redisKey string) string {
+	digest := sha256.Sum256([]byte(redisKey))
+	return "gpp:cache-load-lock:" + hex.EncodeToString(digest[:])
+}
+
+func newRedisLoadToken() (string, error) {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", fmt.Errorf("cache: generate Redis load lock token: %w", err)
+	}
+	return hex.EncodeToString(token[:]), nil
+}
+
+func waitForRedisLoad(ctx context.Context, interval time.Duration) error {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+type redisLoadLock struct {
+	store  *RedisStore
+	key    string
+	token  string
+	cancel context.CancelFunc
+	done   chan struct{}
+	once   sync.Once
+}
+
+func (lock *redisLoadLock) start(ctx context.Context) {
+	renewalCtx, cancel := context.WithCancel(ctx)
+	lock.cancel = cancel
+	lock.done = make(chan struct{})
+	go lock.renew(renewalCtx)
+}
+
+func (lock *redisLoadLock) renew(ctx context.Context) {
+	defer close(lock.done)
+	interval := lock.store.loadLockTTL / 3
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			result, err := redisCompareExpire.Run(
+				ctx, lock.store.client, []string{lock.key}, lock.token,
+				lock.store.loadLockTTL.Milliseconds(),
+			).Int()
+			if err != nil {
+				slog.Warn("cache: Redis load lock renewal failed", slog.Any("error", err))
+				return
+			}
+			if result != 1 {
+				return
+			}
+		}
+	}
+}
+
+func (lock *redisLoadLock) release() {
+	lock.once.Do(func() {
+		lock.cancel()
+		<-lock.done
+		ctx, cancel := context.WithTimeout(context.Background(), defaultRedisPingTimeout)
+		defer cancel()
+		if err := redisCompareDelete.Run(ctx, lock.store.client, []string{lock.key}, lock.token).Err(); err != nil {
+			slog.Warn("cache: Redis load lock release failed", slog.Any("error", err))
+		}
+	})
 }
 
 func (s *RedisStore) InvalidatePrefix(ctx context.Context, prefix string) error {
