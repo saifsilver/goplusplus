@@ -74,6 +74,15 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 	return session, nil
 }
 
+// MaterializeHistoryPagination creates an immutable snapshot table tailored for historical data tables (audit logs, historical sales, past reports).
+func MaterializeHistoryPagination(ctx context.Context, client *Client, historyQuery string, ttl time.Duration, args ...any) (*EphemeralSession, error) {
+	if ttl <= 0 {
+		ttl = 30 * time.Minute // Longer default TTL snapshot for historical data
+	}
+	slog.Info("dbcore/ephemeral: Materializing historical query snapshot table", slog.Duration("ttl", ttl))
+	return MaterializePagination(ctx, client, historyQuery, ttl, args...)
+}
+
 // PaginateSession queries an ephemeral session table with O(1) indexed page lookup.
 func PaginateSession(ctx context.Context, client *Client, sessionID string, page, limit int) ([]string, int, error) {
 	globalEphemeral.mu.Lock()
