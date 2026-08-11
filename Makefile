@@ -10,8 +10,8 @@ GOVULNCHECK_VERSION := v1.6.0
 GOVULNCHECK := $(TOOLS_DIR)/govulncheck
 GO_ENV := GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) CGO_ENABLED=0
 
-# Release tagging: update and commit gpp.Version first. Use `make tag` for the
-# next patch version, or `make tag VERSION=v1.12.0` for an explicit version.
+# Release tagging: `make tag` bumps the patch version, verifies the version
+# update, commits it, and creates an annotated tag. Set VERSION for another release.
 VERSION ?=
 
 help: ## Display available commands
@@ -84,7 +84,7 @@ install-hooks: install-tools ## Enable the tracked Git pre-push hook for this cl
 	git config core.hooksPath .githooks
 	@echo "✅ Git hooks installed. Every push will run 'make verify'."
 
-tag: ## Create an annotated release tag (next patch by default, or VERSION=vX.Y.Z)
+tag: ## Bump gpp.Version, commit, and tag (next patch by default, or VERSION=vX.Y.Z)
 	@set -eu; \
 		test -z "$$(git status --porcelain)" || { echo "❌ Commit or stash working-tree changes before tagging."; exit 1; }; \
 		latest="$$(git tag --list 'v*' --sort=-v:refname | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' | head -n 1)"; \
@@ -98,11 +98,25 @@ tag: ## Create an annotated release tag (next patch by default, or VERSION=vX.Y.
 		fi; \
 		printf '%s\n' "$${tag}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$$' || \
 			{ echo "❌ VERSION must be semantic version vMAJOR.MINOR.PATCH."; exit 1; }; \
-		framework_version="$$(sed -nE 's/^const Version = "([^"]+)"/\1/p' gpp.go)"; \
-		test "$${framework_version}" = "$${tag}" || \
-			{ echo "❌ gpp.Version is $${framework_version}; update and commit it as $${tag} first."; exit 1; }; \
 		! git rev-parse --verify --quiet "refs/tags/$${tag}" >/dev/null || \
 			{ echo "❌ Tag $${tag} already exists."; exit 1; }; \
+		git var GIT_AUTHOR_IDENT >/dev/null 2>&1 || \
+			{ echo "❌ Configure git user.name and user.email before tagging."; exit 1; }; \
+		framework_version="$$(sed -nE 's/^const Version = "([^"]+)"/\1/p' gpp.go)"; \
+		if test "$${framework_version}" != "$${tag}"; then \
+			mkdir -p "$(TMP_DIR)"; \
+			backup="$$(mktemp "$(TMP_DIR)/gpp-version-backup.XXXXXX")"; \
+			candidate="$$(mktemp "$(TMP_DIR)/gpp-version-candidate.XXXXXX")"; \
+			cp gpp.go "$${backup}"; rollback=1; \
+			cleanup() { status=$$?; trap - EXIT HUP INT TERM; if test "$${rollback}" = 1; then cp "$${backup}" gpp.go; git reset -q HEAD -- gpp.go; fi; rm -f "$${backup}" "$${candidate}"; exit "$${status}"; }; \
+			trap cleanup EXIT; trap 'exit 1' HUP INT TERM; \
+			sed "s/^const Version = \"$${framework_version}\"$$/const Version = \"$${tag}\"/" gpp.go > "$${candidate}"; \
+			grep -Fqx "const Version = \"$${tag}\"" "$${candidate}" || { echo "❌ Could not update gpp.Version safely."; exit 1; }; \
+			mv "$${candidate}" gpp.go; \
+			git add gpp.go; \
+			git commit -m "chore: release $${tag}"; \
+			rollback=0; rm -f "$${backup}"; trap - EXIT HUP INT TERM; \
+		fi; \
 		git tag -a "$${tag}" -m "GoPlusPlus $${tag}"; \
 		echo "✅ Created $${tag}. Publish it with: git push origin $${tag}"
 

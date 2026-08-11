@@ -603,6 +603,23 @@ The gate checks:
 
 The tracked hook is a developer feedback mechanism; GitHub Actions remains authoritative because local hooks can be bypassed with `--no-verify`.
 
+### Release tagging
+
+Create the next patch release from a clean worktree. The command updates
+`gpp.Version`, creates a release commit, and adds an annotated Git tag:
+
+```bash
+make tag
+```
+
+Choose a specific semantic version when publishing a minor or major release:
+
+```bash
+make tag VERSION=v1.12.0
+```
+
+The tag remains local until explicitly published with `git push origin <tag>`.
+
 ---
 
 ## 🧪 Ergonomic E2E Integration Testing Suite (`gpptest`)
