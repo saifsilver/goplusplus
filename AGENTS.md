@@ -145,13 +145,19 @@ adminGroup.Use(
 | Feature | Code Snippet |
 | :--- | :--- |
 | **JSON Response** | `c.JSON(200, gpp.H{"key": "val"})` |
+| **Response Shortcuts** | `c.OK(data)`, `c.Created(data)`, `c.Accepted(data)`, `c.NoContent()` |
 | **Bind Body** | `c.BindJSON(&struct)` |
 | **Bind & Validate** | `c.BindAndValidate(&struct)` |
-| **Path Parameter** | `c.Param("id")` |
+| **Path Parameter** | `c.Param("id")`, `id := c.ParamInt64("id")`, `c.ParamInt("id")` |
 | **Query Parameter** | `c.Query("q")` or `c.QueryDefault("page", "1")` |
+| **Get Authenticated User ID** | `id := c.UserID()` or `id, err := c.RequireUserID()` |
 | **Get Typed Context Key** | `userID := c.GetInt64("user_id")` or `id := c.GetInt("id")` |
 | **Get Context Any Value** | `val := c.GetAny("key")` or `val := c.Value("key")` |
 | **Get Generic Context Value** | `val, ok := gpp.GetAs[User](c, "user")` |
+| **Zero-SQL ORM Engine** | `orm := dbcore.NewORM[User](client)` & `orm.Save(ctx, &user)` |
+| **Typed Raw SQL Query** | `users, err := dbcore.QueryTyped[User](ctx, client, "SELECT * FROM users WHERE status=$1", "active")` |
+| **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
+| **Password Hashing & JWT** | `hash := auth.HashPassword(pass, secret)` & `token := auth.GenerateToken(userID, secret)` |
 | **Request ID** | `c.RequestID()` or `app.Use(middleware.RequestID())` |
 | **Idempotency** | `app.Use(middleware.Idempotency())` |
 | **Singleflight Deduplication** | `app.Use(middleware.Singleflight())` |
