@@ -47,10 +47,50 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 		return nil, fmt.Errorf("dbcore/ephemeral: failed to create temporary result table: %w", err)
 	}
 
+	totalCount := 0
+	if query != "" {
+		err := client.Query(ctx, query, func(rows *sql.Rows) error {
+			if rows == nil {
+				return nil
+			}
+			cols, err := rows.Columns()
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				totalCount++
+				columnPointers := make([]any, len(cols))
+				columnValues := make([]any, len(cols))
+				for i := range cols {
+					columnPointers[i] = &columnValues[i]
+				}
+				if err := rows.Scan(columnPointers...); err != nil {
+					continue
+				}
+				rowMap := make(map[string]any)
+				for i, colName := range cols {
+					val := columnValues[i]
+					if b, ok := val.([]byte); ok {
+						rowMap[colName] = string(b)
+					} else {
+						rowMap[colName] = val
+					}
+				}
+				jsonBytes, _ := json.Marshal(rowMap)
+				insertSQL := fmt.Sprintf("INSERT INTO %s (row_num, data_json) VALUES ($1, $2)", tableName)
+				_, _ = client.Exec(ctx, insertSQL, totalCount, string(jsonBytes))
+			}
+			return rows.Err()
+		}, args...)
+		if err != nil {
+			slog.Warn("dbcore/ephemeral: Query row population warning", slog.String("error", err.Error()))
+		}
+	}
+
 	session := &EphemeralSession{
 		SessionID: sessionID,
 		TableName: tableName,
-		TotalRows: 0,
+		TotalRows: totalCount,
 		ExpiresAt: time.Now().Add(ttl),
 	}
 
@@ -124,6 +164,23 @@ func PaginateSession(ctx context.Context, client *Client, sessionID string, page
 	}
 
 	return rowsJSON, session.TotalRows, nil
+}
+
+// PaginateSessionTyped queries an ephemeral session table and unmarshals row JSON into typed structs []T.
+func PaginateSessionTyped[T any](ctx context.Context, client *Client, sessionID string, page, limit int) ([]T, int, error) {
+	jsonRows, total, err := PaginateSession(ctx, client, sessionID, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var results []T
+	for _, jsonStr := range jsonRows {
+		var item T
+		if err := json.Unmarshal([]byte(jsonStr), &item); err == nil {
+			results = append(results, item)
+		}
+	}
+	return results, total, nil
 }
 
 func generateSessionID() string {
