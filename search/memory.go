@@ -1,10 +1,11 @@
 package search
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -241,25 +242,30 @@ func dateValue(value any) time.Time {
 }
 
 func sortDocuments(documents []scoredDocument, schema Schema, request SearchRequest) {
-	sort.SliceStable(documents, func(left, right int) bool {
-		leftDoc, rightDoc := documents[left], documents[right]
+	slices.SortStableFunc(documents, func(leftDoc, rightDoc scoredDocument) int {
 		for _, sortField := range request.Sort {
 			leftValue, leftExists := leftDoc.document.Attributes[sortField.Field]
 			rightValue, rightExists := rightDoc.document.Attributes[sortField.Field]
 			leftExists = leftExists && leftValue != nil
 			rightExists = rightExists && rightValue != nil
 			if leftExists != rightExists {
-				return leftExists
+				if leftExists {
+					return -1
+				}
+				return 1
 			}
 			comparison := compareValue(schema.Attributes[sortField.Field], leftValue, rightValue)
 			if comparison != 0 {
-				return (comparison < 0) == (sortField.Direction == SortAscending)
+				if sortField.Direction == SortAscending {
+					return comparison
+				}
+				return -comparison
 			}
 		}
 		if len(request.Sort) == 0 && leftDoc.score != rightDoc.score {
-			return leftDoc.score > rightDoc.score
+			return cmp.Compare(rightDoc.score, leftDoc.score)
 		}
-		return leftDoc.document.ID < rightDoc.document.ID
+		return cmp.Compare(leftDoc.document.ID, rightDoc.document.ID)
 	})
 }
 
@@ -348,18 +354,18 @@ func uniqueAttributeValues(value any, definition AttributeDefinition) []any {
 	for _, item := range unique {
 		values = append(values, item)
 	}
-	sort.Slice(values, func(left, right int) bool {
-		return compareValue(definition, values[left], values[right]) < 0
+	slices.SortFunc(values, func(a, b any) int {
+		return compareValue(definition, a, b)
 	})
 	return values
 }
 
 func sortFacetBuckets(buckets []FacetBucket, definition AttributeDefinition, facetSort FacetSort) {
-	sort.Slice(buckets, func(left, right int) bool {
-		if facetSort == FacetSortCount && buckets[left].Count != buckets[right].Count {
-			return buckets[left].Count > buckets[right].Count
+	slices.SortFunc(buckets, func(a, b FacetBucket) int {
+		if facetSort == FacetSortCount && a.Count != b.Count {
+			return cmp.Compare(b.Count, a.Count)
 		}
-		return compareValue(definition, buckets[left].Value, buckets[right].Value) < 0
+		return compareValue(definition, a.Value, b.Value)
 	})
 }
 

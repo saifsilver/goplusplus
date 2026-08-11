@@ -1,11 +1,12 @@
 package gpp
 
 import (
+	"cmp"
 	"embed"
 	"io/fs"
 	"net/http"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saifsilver/goplusplus/dbcore"
@@ -145,8 +146,8 @@ func (engine *Engine) addStaticRoute(mount string, handlers HandlersChain) {
 	engine.staticMu.Lock()
 	defer engine.staticMu.Unlock()
 	engine.staticRoutes = append(engine.staticRoutes, staticRoute{mount: mount, handlers: handlers})
-	sort.SliceStable(engine.staticRoutes, func(i, j int) bool {
-		return len(engine.staticRoutes[i].mount) > len(engine.staticRoutes[j].mount)
+	slices.SortStableFunc(engine.staticRoutes, func(a, b staticRoute) int {
+		return cmp.Compare(len(b.mount), len(a.mount))
 	})
 }
 

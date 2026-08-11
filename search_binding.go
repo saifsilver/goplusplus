@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 
 	"github.com/graphql-go/graphql"
@@ -222,7 +222,7 @@ func graphQLSearchResult(result search.SearchResult) map[string]any {
 	for field := range result.Facets {
 		fields = append(fields, field)
 	}
-	sort.Strings(fields)
+	slices.Sort(fields)
 	facets := make([]search.FacetResult, 0, len(fields))
 	for _, field := range fields {
 		facets = append(facets, result.Facets[field])

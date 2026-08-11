@@ -1,9 +1,10 @@
 package gpp
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -328,7 +329,9 @@ func boundedSortedMapKeys(value reflect.Value, limit int) []reflect.Value {
 	for len(keys) < limit && iterator.Next() {
 		keys = append(keys, iterator.Key())
 	}
-	sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
+	slices.SortFunc(keys, func(a, b reflect.Value) int {
+		return cmp.Compare(fmt.Sprint(a), fmt.Sprint(b))
+	})
 	return keys
 }
 
