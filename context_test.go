@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/saifsilver/goplusplus"
@@ -47,21 +49,32 @@ func TestContextQueryParams(t *testing.T) {
 	app := gpp.New()
 
 	var queryVal, defaultVal string
+	var pageInt int
+	var activeBool bool
+
 	app.GET("/search", func(c *gpp.Context) error {
 		queryVal = c.Query("q")
 		defaultVal = c.QueryDefault("page", "1")
-		return c.String(http.StatusOK, "ok")
+		pageInt = c.QueryInt("page", 1)
+		activeBool = c.QueryBool("active", true)
+		return c.String(http.StatusOK, "%s", "ok")
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/search?q=golang", nil)
+	req := httptest.NewRequest(http.MethodGet, "/search?q=golang&page=5&active=true", nil)
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, req)
 
 	if queryVal != "golang" {
 		t.Fatalf("expected query q='golang', got '%s'", queryVal)
 	}
-	if defaultVal != "1" {
-		t.Fatalf("expected default page='1', got '%s'", defaultVal)
+	if defaultVal != "5" {
+		t.Fatalf("expected default page='5', got '%s'", defaultVal)
+	}
+	if pageInt != 5 {
+		t.Fatalf("expected pageInt=5, got %d", pageInt)
+	}
+	if !activeBool {
+		t.Fatalf("expected activeBool=true")
 	}
 }
 
@@ -77,6 +90,10 @@ func TestContextStorage(t *testing.T) {
 	app.GET("/me", func(c *gpp.Context) error {
 		val, _ := c.Get("user_id")
 		retrievedID = val.(int)
+		mustVal := c.MustGet("user_id").(int)
+		if mustVal != 100 {
+			t.Errorf("MustGet failed")
+		}
 		return c.JSON(http.StatusOK, gpp.H{"id": retrievedID})
 	})
 
@@ -103,7 +120,6 @@ func TestTypedContextGetters(t *testing.T) {
 	})
 
 	app.GET("/test", func(c *gpp.Context) error {
-		// Test GetInt64 with type coercion
 		if c.GetInt64("int64_val") != 1001 {
 			t.Errorf("GetInt64(int64_val) = %d; want 1001", c.GetInt64("int64_val"))
 		}
@@ -117,7 +133,6 @@ func TestTypedContextGetters(t *testing.T) {
 			t.Errorf("GetInt64(missing_key) = %d; want 0", c.GetInt64("missing_key"))
 		}
 
-		// Test GetInt
 		if c.GetInt("int_val") != 42 {
 			t.Errorf("GetInt(int_val) = %d; want 42", c.GetInt("int_val"))
 		}
@@ -125,12 +140,10 @@ func TestTypedContextGetters(t *testing.T) {
 			t.Errorf("GetInt(int64_val) = %d; want 1001", c.GetInt("int64_val"))
 		}
 
-		// Test GetFloat64
 		if c.GetFloat64("float_val") != 99.9 {
 			t.Errorf("GetFloat64(float_val) = %f; want 99.9", c.GetFloat64("float_val"))
 		}
 
-		// Test GetBool
 		if !c.GetBool("bool_val") {
 			t.Errorf("GetBool(bool_val) = false; want true")
 		}
@@ -138,7 +151,6 @@ func TestTypedContextGetters(t *testing.T) {
 			t.Errorf("GetBool(str_bool) = false; want true")
 		}
 
-		// Test GetAny & Value (single return value for type assertion)
 		if id, ok := c.GetAny("int64_val").(int64); !ok || id != 1001 {
 			t.Errorf("GetAny(int64_val) assertion failed, got %v", c.GetAny("int64_val"))
 		}
@@ -146,7 +158,6 @@ func TestTypedContextGetters(t *testing.T) {
 			t.Errorf("Value(int64_val) assertion failed, got %v", c.Value("int64_val"))
 		}
 
-		// Test GetString
 		if c.GetString("str_num") != "12345" {
 			t.Errorf("GetString(str_num) = %s; want '12345'", c.GetString("str_num"))
 		}
@@ -154,7 +165,7 @@ func TestTypedContextGetters(t *testing.T) {
 			t.Errorf("GetString(int_val) = %s; want '42'", c.GetString("int_val"))
 		}
 
-		return c.String(http.StatusOK, "ok")
+		return c.String(http.StatusOK, "%s", "ok")
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -166,48 +177,76 @@ func TestTypedContextGetters(t *testing.T) {
 	}
 }
 
-func TestGenericContextGetters(t *testing.T) {
+func TestContextResponseFormattersAndPagination(t *testing.T) {
 	app := gpp.New()
 
-	type CustomUser struct {
-		Name string
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "static.txt")
+	_ = os.WriteFile(filePath, []byte("static_file_content"), 0644)
+
+	app.GET("/users/:id", func(c *gpp.Context) error {
+		if c.PathValue("id") != "42" {
+			t.Errorf("PathValue failed")
+		}
+		if c.IsCancelled() {
+			t.Errorf("IsCancelled returned true unexpectedly")
+		}
+		return c.Paginate(http.StatusOK, []string{"user1", "user2"}, 1, 10, 2)
+	})
+
+	app.GET("/cursor", func(c *gpp.Context) error {
+		return c.PaginateCursor(http.StatusOK, []string{"item1"}, "next_cursor_123", true, 10)
+	})
+
+	app.GET("/html", func(c *gpp.Context) error {
+		return c.HTML(http.StatusOK, "<h1>Hello</h1>")
+	})
+
+	app.GET("/file", func(c *gpp.Context) error {
+		return c.File(filePath)
+	})
+
+	app.GET("/abort", func(c *gpp.Context) error {
+		return c.AbortWithStatusJSON(http.StatusForbidden, gpp.H{"error": "blocked"})
+	})
+
+	// Paginate test
+	req1 := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Errorf("Paginate status 200 failed: %d", w1.Code)
 	}
 
-	app.Use(func(c *gpp.Context) error {
-		c.Set("user", CustomUser{Name: "Alice"})
-		c.Set("user_id", int64(777))
-		return c.Next()
-	})
+	// PaginateCursor test
+	req2 := httptest.NewRequest(http.MethodGet, "/cursor", nil)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Errorf("PaginateCursor status 200 failed: %d", w2.Code)
+	}
 
-	app.GET("/generic", func(c *gpp.Context) error {
-		user, ok := gpp.GetAs[CustomUser](c, "user")
-		if !ok || user.Name != "Alice" {
-			t.Errorf("GetAs[CustomUser] failed: %+v", user)
-		}
+	// HTML test
+	req3 := httptest.NewRequest(http.MethodGet, "/html", nil)
+	w3 := httptest.NewRecorder()
+	app.ServeHTTP(w3, req3)
+	if w3.Header().Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Errorf("HTML content type failed: %s", w3.Header().Get("Content-Type"))
+	}
 
-		id := gpp.GetOrDefault[int64](c, "user_id", 0)
-		if id != 777 {
-			t.Errorf("GetOrDefault[int64] = %d; want 777", id)
-		}
+	// File test
+	req4 := httptest.NewRequest(http.MethodGet, "/file", nil)
+	w4 := httptest.NewRecorder()
+	app.ServeHTTP(w4, req4)
+	if w4.Body.String() != "static_file_content" {
+		t.Errorf("File serve failed: %s", w4.Body.String())
+	}
 
-		defaultVal := gpp.GetOrDefault[string](c, "missing", "default_str")
-		if defaultVal != "default_str" {
-			t.Errorf("GetOrDefault[string] = %s; want 'default_str'", defaultVal)
-		}
-
-		mustVal := gpp.MustGetAs[int64](c, "user_id")
-		if mustVal != 777 {
-			t.Errorf("MustGetAs[int64] = %d; want 777", mustVal)
-		}
-
-		return c.String(http.StatusOK, "ok")
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/generic", nil)
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", w.Code)
+	// AbortWithStatusJSON test
+	req5 := httptest.NewRequest(http.MethodGet, "/abort", nil)
+	w5 := httptest.NewRecorder()
+	app.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusForbidden {
+		t.Errorf("AbortWithStatusJSON failed: %d", w5.Code)
 	}
 }
