@@ -503,6 +503,42 @@ audit.Log(ctx, "user_admin", "UPDATE_ROLE", "user_42", map[string]any{"new_role"
 
 ---
 
+### 14. 🛠️ Production Suite: Migrations, Seeder/Faker, Idempotency, Singleflight & Pagination
+
+- **SQL Migrations (`dbcore.AutoMigrate`, `dbcore.MigrateEmbed`)**: Auto-executes transactional migrations tracked in `gpp_migrations`.
+- **DB Seeder & Faker (`seed.Run`, `seed.Faker`)**: Seed fake data (`f.Name()`, `f.Email()`, `f.UUID()`, `f.Phone()`) in 1 batch operation.
+- **Idempotency Key (`middleware.Idempotency()`)**: Caches write responses for `Idempotency-Key` headers to prevent duplicate side-effects.
+- **Singleflight Deduplication (`middleware.Singleflight()`)**: Deduplicates concurrent identical `GET` requests to prevent thundering herd.
+- **High-Performance Pagination (`c.Paginate`, `c.PaginateCursor`)**: Standardized page-based and $O(1)$ cursor-based pagination.
+
+```go
+// 1. Auto-Run SQL Migrations from embed.FS
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
+_ = dbcore.MigrateEmbed(ctx, db, migrationFiles, "migrations")
+
+// 2. Batch Seed Fake Users
+_ = seed.Run(ctx, db, seed.Plan{
+    Table: "users",
+    Count: 50,
+    Factory: func(f *seed.Faker) map[string]any {
+        return map[string]any{"name": f.Name(), "email": f.Email(), "role": f.Select("admin", "user")}
+    },
+})
+
+// 3. High-Performance Cursor Pagination Handler
+app.GET("/api/v1/feed", func(c *gpp.Context) error {
+    cursor, limit := c.GetCursorAndLimit(20)
+    result, err := userRepo.PaginateCursor(c.Request.Context(), "id", cursor, limit)
+    if err != nil {
+        return err
+    }
+    return c.PaginateCursor(200, result.Items, result.NextCursor, result.HasMore, result.Limit)
+})
+```
+
+---
+
 ## 🤖 AI Agent Integration Guide (`AGENTS.md`)
 
 `goplusplus` includes a dedicated **[AGENTS.md](AGENTS.md)** specification file designed for AI coding assistants (Codex, Claude, Cursor, Copilot, ChatGPT). AI agents reading `AGENTS.md` can instantly generate 100% correct, production-grade `goplusplus` code.

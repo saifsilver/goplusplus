@@ -568,3 +568,93 @@ func (c *Context) Redirect(code int, location string) error {
 	http.Redirect(c.Writer, c.Request, location, code)
 	return nil
 }
+
+// RequestID returns the active request ID from context or HTTP header.
+func (c *Context) RequestID() string {
+	if val := c.GetString("request_id"); val != "" {
+		return val
+	}
+	return c.GetHeader("X-Request-ID")
+}
+
+// GetPageAndLimit parses query parameters 'page' and 'limit' with safe fallback defaults.
+func (c *Context) GetPageAndLimit(defaultLimit ...int) (int, int) {
+	dLimit := 20
+	if len(defaultLimit) > 0 && defaultLimit[0] > 0 {
+		dLimit = defaultLimit[0]
+	}
+	page := c.QueryInt("page", 1)
+	if page < 1 {
+		page = 1
+	}
+	limit := c.QueryInt("limit", dLimit)
+	if limit < 1 {
+		limit = dLimit
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	return page, limit
+}
+
+// GetCursorAndLimit parses query parameters 'cursor' and 'limit' with safe fallback defaults.
+func (c *Context) GetCursorAndLimit(defaultLimit ...int) (string, int) {
+	dLimit := 20
+	if len(defaultLimit) > 0 && defaultLimit[0] > 0 {
+		dLimit = defaultLimit[0]
+	}
+	cursor := c.Query("cursor")
+	limit := c.QueryInt("limit", dLimit)
+	if limit < 1 {
+		limit = dLimit
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	return cursor, limit
+}
+
+// Paginate writes a standardized offset-based paginated JSON response.
+func (c *Context) Paginate(statusCode int, items any, page, limit, total int) error {
+	totalPages := 0
+	if limit > 0 {
+		totalPages = int(math.Ceil(float64(total) / float64(limit)))
+	}
+	return c.JSON(statusCode, H{
+		"data": items,
+		"pagination": H{
+			"page":        page,
+			"limit":       limit,
+			"total_items": total,
+			"total_pages": totalPages,
+		},
+	})
+}
+
+// PaginateCursor writes a standardized O(1) high-performance cursor-based paginated JSON response.
+func (c *Context) PaginateCursor(statusCode int, items any, nextCursor string, hasMore bool, limit int) error {
+	return c.JSON(statusCode, H{
+		"data": items,
+		"pagination": H{
+			"next_cursor": nextCursor,
+			"has_more":    hasMore,
+			"limit":       limit,
+		},
+	})
+}
+
+// Retry executes a function with up to maxAttempts automatic retries on error.
+func (c *Context) Retry(maxAttempts int, fn func(c *Context) error) error {
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+	var lastErr error
+	for i := 1; i <= maxAttempts; i++ {
+		if err := fn(c); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+	return lastErr
+}

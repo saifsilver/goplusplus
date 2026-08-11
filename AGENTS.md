@@ -152,6 +152,13 @@ adminGroup.Use(
 | **Get Typed Context Key** | `userID := c.GetInt64("user_id")` or `id := c.GetInt("id")` |
 | **Get Context Any Value** | `val := c.GetAny("key")` or `val := c.Value("key")` |
 | **Get Generic Context Value** | `val, ok := gpp.GetAs[User](c, "user")` |
+| **Request ID** | `c.RequestID()` or `app.Use(middleware.RequestID())` |
+| **Idempotency** | `app.Use(middleware.Idempotency())` |
+| **Singleflight Deduplication** | `app.Use(middleware.Singleflight())` |
+| **Auto DB Migrations** | `dbcore.AutoMigrate(ctx, db, migrations...)` |
+| **DB Seeder & Faker** | `seed.Run(ctx, db, seed.Plan{Table: "users", Count: 50, Factory: ...})` |
+| **Offset Pagination** | `c.Paginate(200, items, page, limit, total)` |
+| **Cursor Pagination** | `c.PaginateCursor(200, items, nextCursor, hasMore, limit)` |
 | **404 Error** | `return gpp.ErrNotFound("Item not found")` |
 | **400 Error** | `return gpp.ErrBadRequest("Invalid field")` |
 | **401 Error** | `return gpp.ErrUnauthorized("Token expired")` |
