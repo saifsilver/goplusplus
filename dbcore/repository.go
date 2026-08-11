@@ -22,6 +22,11 @@ func NewRepository[T any](client *Client, tableName string) *Repository[T] {
 	}
 }
 
+// TableName returns the configured table name for the repository.
+func (r *Repository[T]) TableName() string {
+	return r.tableName
+}
+
 // FindByID retrieves a record by primary key ID.
 func (r *Repository[T]) FindByID(ctx context.Context, id any) (*T, error) {
 	query := fmt.Sprintf("SELECT * FROM %s WHERE id = $1 LIMIT 1", r.tableName)

@@ -1,14 +1,12 @@
-package queue_test
+package queue
 
 import (
 	"context"
 	"testing"
-
-	"github.com/saifsilver/goplusplus/queue"
 )
 
 func TestQueueEnqueue(t *testing.T) {
-	q := queue.New()
+	q := New()
 	ctx := context.Background()
 
 	err := q.Enqueue(ctx, "send_welcome_email", map[string]any{"user_id": 42})

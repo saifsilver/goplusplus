@@ -1,4 +1,4 @@
-package realtime_test
+package realtime
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/saifsilver/goplusplus"
-	"github.com/saifsilver/goplusplus/realtime"
 )
 
 func TestStreamSSE(t *testing.T) {
@@ -15,11 +14,11 @@ func TestStreamSSE(t *testing.T) {
 
 	app.GET("/events", func(c *gpp.Context) error {
 		ch := make(chan any, 2)
-		ch <- realtime.SSEEvent{Event: "ping", Data: "hello", ID: "1"}
+		ch <- SSEEvent{Event: "ping", Data: "hello", ID: "1"}
 		ch <- "simple message"
 		close(ch)
 
-		return realtime.StreamSSE(c, ch)
+		return StreamSSE(c, ch)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/events", nil)
@@ -40,7 +39,7 @@ func TestWebSocketUpgradeMissingKey(t *testing.T) {
 	app := gpp.New()
 
 	app.GET("/ws", func(c *gpp.Context) error {
-		_, err := realtime.Upgrade(c)
+		_, err := Upgrade(c)
 		if err != nil {
 			return err
 		}

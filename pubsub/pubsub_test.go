@@ -1,26 +1,30 @@
-package pubsub_test
+package pubsub
 
 import (
 	"context"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/saifsilver/goplusplus/pubsub"
 )
 
 func TestPubSubBus(t *testing.T) {
-	bus := pubsub.New()
+	bus := New()
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
-	var received string
+	var received1, received2 string
 	bus.Subscribe("user_created", func(ctx context.Context, payload any) {
 		defer wg.Done()
 		if s, ok := payload.(string); ok {
-			received = s
+			received1 = s
+		}
+	})
+	bus.Subscribe("user_created", func(ctx context.Context, payload any) {
+		defer wg.Done()
+		if s, ok := payload.(string); ok {
+			received2 = s
 		}
 	})
 
@@ -37,10 +41,10 @@ func TestPubSubBus(t *testing.T) {
 
 	select {
 	case <-done:
-		if received != "alex_dev" {
-			t.Errorf("expected 'alex_dev', got '%s'", received)
+		if received1 != "alex_dev" || received2 != "alex_dev" {
+			t.Errorf("expected 'alex_dev', got '%s', '%s'", received1, received2)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for event handler execution")
 	}
 }

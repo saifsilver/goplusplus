@@ -130,6 +130,9 @@ func TestGRPCMultiplexMiddleware(t *testing.T) {
 	app.GET("/api", func(c *gpp.Context) error {
 		return c.String(http.StatusOK, "%s", "http_ok")
 	})
+	app.POST("/api", func(c *gpp.Context) error {
+		return c.String(http.StatusOK, "%s", "http_ok")
+	})
 
 	// Standard HTTP request
 	req1 := httptest.NewRequest(http.MethodGet, "/api", nil)
