@@ -18,4 +18,4 @@ multi_protocol
 *.png
 cmd.log
 docs/plans
-docs/V2_IMPLEMENTATION_PLAN.md
+docs/v2/implementation_plan.md
