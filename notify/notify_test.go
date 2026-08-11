@@ -2,6 +2,7 @@ package notify_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/saifsilver/goplusplus/notify"
@@ -16,15 +17,15 @@ func TestNotifySendEmailAndSMS(t *testing.T) {
 		Body:    "Hello world",
 		HTML:    true,
 	})
-	if errEmail != nil {
-		t.Errorf("SendEmail returned error: %v", errEmail)
+	if !errors.Is(errEmail, notify.ErrEmailProviderNotConfigured) {
+		t.Errorf("SendEmail error = %v", errEmail)
 	}
 
 	errSMS := notify.SendSMS(ctx, notify.SMSMessage{
 		ToPhone: "+15551234567",
 		Text:    "Your OTP code is 123456",
 	})
-	if errSMS != nil {
-		t.Errorf("SendSMS returned error: %v", errSMS)
+	if !errors.Is(errSMS, notify.ErrSMSProviderNotConfigured) {
+		t.Errorf("SendSMS error = %v", errSMS)
 	}
 }

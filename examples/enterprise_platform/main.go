@@ -29,6 +29,24 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	emailProvider, err := notify.NewSendGridProvider(notify.SendGridConfig{
+		APIKey: os.Getenv("SENDGRID_API_KEY"), FromEmail: os.Getenv("NOTIFY_FROM_EMAIL"),
+		FromName: "goplusplus Enterprise",
+	})
+	if err != nil {
+		panic(err)
+	}
+	smsProvider, err := notify.NewTwilioProvider(notify.TwilioConfig{
+		AccountSID: os.Getenv("TWILIO_ACCOUNT_SID"), AuthToken: os.Getenv("TWILIO_AUTH_TOKEN"),
+		FromPhone: os.Getenv("TWILIO_FROM_PHONE"),
+	})
+	if err != nil {
+		panic(err)
+	}
+	notifications, err := notify.NewClient(emailProvider, smsProvider)
+	if err != nil {
+		panic(err)
+	}
 
 	// Global System & Security Middleware
 	app.Use(
@@ -72,16 +90,20 @@ func main() {
 		tenantID := tenant.GetTenantID(c)
 
 		// Dispatch Email and SMS Notification
-		_ = notify.SendEmail(c.Request.Context(), notify.EmailMessage{
+		if err := notifications.SendEmail(c.Request.Context(), notify.EmailMessage{
 			To:      user.Email,
 			Subject: "Funds Disbursed",
 			Body:    "Disbursement executed successfully for tenant: " + tenantID,
-		})
+		}); err != nil {
+			return gpp.ErrInternal("Failed to send disbursement email")
+		}
 
-		_ = notify.SendSMS(c.Request.Context(), notify.SMSMessage{
+		if err := notifications.SendSMS(c.Request.Context(), notify.SMSMessage{
 			ToPhone: "+15550192831",
 			Text:    "Alert: Finance disbursement approved by " + user.ID,
-		})
+		}); err != nil {
+			return gpp.ErrInternal("Failed to send disbursement SMS")
+		}
 
 		return c.JSON(http.StatusOK, gpp.H{
 			"status":    "approved",

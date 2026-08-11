@@ -2,10 +2,22 @@ package notify
 
 import (
 	"context"
-	"log/slog"
+	"errors"
+	"fmt"
+	"net/mail"
+	"strings"
 )
 
-// EmailMessage represents an email notification payload.
+const (
+	defaultMaxEmailBodyBytes = 1 << 20
+	defaultMaxSMSBytes       = 1600
+)
+
+var (
+	ErrEmailProviderNotConfigured = errors.New("notify: email provider is not configured")
+	ErrSMSProviderNotConfigured   = errors.New("notify: SMS provider is not configured")
+)
+
 type EmailMessage struct {
 	To      string
 	Subject string
@@ -13,26 +25,75 @@ type EmailMessage struct {
 	HTML    bool
 }
 
-// SMSMessage represents an SMS text notification payload.
 type SMSMessage struct {
 	ToPhone string
 	Text    string
 }
 
-// SendEmail dispatches an email notification.
-func SendEmail(ctx context.Context, msg EmailMessage) error {
-	slog.Info("notify: Dispatched Email Notification",
-		slog.String("to", msg.To),
-		slog.String("subject", msg.Subject),
-	)
+type EmailProvider interface {
+	SendEmail(context.Context, EmailMessage) error
+}
+
+type SMSProvider interface {
+	SendSMS(context.Context, SMSMessage) error
+}
+
+// Client routes notifications through explicitly configured providers.
+type Client struct {
+	email EmailProvider
+	sms   SMSProvider
+}
+
+func NewClient(email EmailProvider, sms SMSProvider) (*Client, error) {
+	if email == nil && sms == nil {
+		return nil, errors.New("notify: at least one provider is required")
+	}
+	return &Client{email: email, sms: sms}, nil
+}
+
+func (client *Client) SendEmail(ctx context.Context, message EmailMessage) error {
+	if client == nil || client.email == nil {
+		return ErrEmailProviderNotConfigured
+	}
+	return client.email.SendEmail(ctx, message)
+}
+
+func (client *Client) SendSMS(ctx context.Context, message SMSMessage) error {
+	if client == nil || client.sms == nil {
+		return ErrSMSProviderNotConfigured
+	}
+	return client.sms.SendSMS(ctx, message)
+}
+
+// SendEmail is retained as a fail-closed compatibility function. Construct a
+// Client instead so credentials and provider lifecycle remain explicit.
+func SendEmail(ctx context.Context, message EmailMessage) error {
+	return ErrEmailProviderNotConfigured
+}
+
+// SendSMS is retained as a fail-closed compatibility function. Construct a
+// Client instead so credentials and provider lifecycle remain explicit.
+func SendSMS(ctx context.Context, message SMSMessage) error {
+	return ErrSMSProviderNotConfigured
+}
+
+func validateEmailMessage(message EmailMessage, maxBodyBytes int) error {
+	if err := validateEmailAddress(message.To); err != nil {
+		return fmt.Errorf("notify: invalid recipient email: %w", err)
+	}
+	if strings.TrimSpace(message.Subject) == "" || len(message.Subject) > 998 || strings.ContainsAny(message.Subject, "\r\n") {
+		return errors.New("notify: email subject must contain 1 to 998 bytes without newlines")
+	}
+	if message.Body == "" || len(message.Body) > maxBodyBytes {
+		return fmt.Errorf("notify: email body must contain 1 to %d bytes", maxBodyBytes)
+	}
 	return nil
 }
 
-// SendSMS dispatches an SMS text message notification.
-func SendSMS(ctx context.Context, msg SMSMessage) error {
-	slog.Info("notify: Dispatched SMS Notification",
-		slog.String("phone", msg.ToPhone),
-		slog.String("text", msg.Text),
-	)
+func validateEmailAddress(address string) error {
+	parsed, err := mail.ParseAddress(address)
+	if err != nil || parsed.Address != address || strings.ContainsAny(address, "\r\n") {
+		return errors.New("valid mailbox address required")
+	}
 	return nil
 }

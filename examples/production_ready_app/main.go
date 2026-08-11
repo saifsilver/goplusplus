@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
+	"time"
 
 	gpp "github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/audit"
@@ -35,14 +38,26 @@ func main() {
 		return nil // DB is healthy
 	})
 	featureManager := features.NewManager()
+	tracingProvider, err := tracing.NewProvider(ctx, tracing.Config{
+		ServiceName: "goplusplus-production-api", Endpoint: os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),
+		Insecure: parseBool(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")),
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = tracingProvider.Shutdown(shutdownCtx)
+	}()
 
 	// 3. goplusplus App Engine with Full Observability & Production Middleware
 	app := gpp.New()
 
 	app.Use(
-		tracing.Middleware(),        // OpenTelemetry TraceID injection
-		versioning.Middleware("v1"), // API versioning negotiation
-		middleware.Observability(),  // Prometheus request metrics
+		tracingProvider.Middleware(), // OpenTelemetry OTLP tracing
+		versioning.Middleware("v1"),  // API versioning negotiation
+		middleware.Observability(),   // Prometheus request metrics
 		middleware.Logger(),
 		middleware.Recovery(),
 		middleware.Security(),
@@ -89,4 +104,9 @@ func main() {
 	if err := app.Listen(":8080"); err != nil {
 		panic(err)
 	}
+}
+
+func parseBool(value string) bool {
+	parsed, _ := strconv.ParseBool(value)
+	return parsed
 }

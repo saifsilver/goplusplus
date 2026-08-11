@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"net/url"
 	"os"
 	"path"
@@ -44,7 +43,7 @@ func (l *LocalStorageProvider) Upload(ctx context.Context, key string, data []by
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	cleanKey, err := cleanLocalStorageKey(key)
+	cleanKey, err := cleanObjectKey(key)
 	if err != nil {
 		return "", err
 	}
@@ -76,14 +75,14 @@ func (l *LocalStorageProvider) GetPresignedURL(ctx context.Context, key string, 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	cleanKey, err := cleanLocalStorageKey(key)
+	cleanKey, err := cleanObjectKey(key)
 	if err != nil {
 		return "", err
 	}
 	return localStorageURL(cleanKey), nil
 }
 
-func cleanLocalStorageKey(key string) (string, error) {
+func cleanObjectKey(key string) (string, error) {
 	normalized := strings.ReplaceAll(key, "\\", "/")
 	cleaned := path.Clean(normalized)
 	if cleaned != normalized || cleaned == "." || !fs.ValidPath(cleaned) {
@@ -94,33 +93,6 @@ func cleanLocalStorageKey(key string) (string, error) {
 
 func localStorageURL(key string) string {
 	return (&url.URL{Path: "/uploads/" + key}).EscapedPath()
-}
-
-// S3Config holds AWS S3 configuration parameters.
-type S3Config struct {
-	Bucket          string
-	Region          string
-	AccessKeyID     string
-	SecretAccessKey string
-}
-
-// S3Client implements AWS S3 object storage Provider.
-type S3Client struct {
-	cfg S3Config
-}
-
-// NewS3Client initializes a new AWS S3 storage provider.
-func NewS3Client(cfg S3Config) *S3Client {
-	return &S3Client{cfg: cfg}
-}
-
-func (s *S3Client) Upload(ctx context.Context, key string, data []byte, contentType string) (string, error) {
-	slog.Info("storage: Uploaded object to AWS S3", slog.String("bucket", s.cfg.Bucket), slog.String("key", key))
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.cfg.Bucket, s.cfg.Region, key), nil
-}
-
-func (s *S3Client) GetPresignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s?X-Amz-Expires=%d", s.cfg.Bucket, s.cfg.Region, key, int(expiry.Seconds())), nil
 }
 
 // GenerateCloudFrontURL formats a CloudFront CDN URL for asset distribution.

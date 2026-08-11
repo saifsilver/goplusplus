@@ -30,8 +30,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	var searchEngine search.Engine = search.NewElasticsearchClient(search.ESConfig{})
-	var storageProvider storage.Provider = storage.NewS3Client(storage.S3Config{Bucket: "my-bucket", Region: "us-east-1"})
+	elasticsearch, err := search.NewElasticsearchClient(ctx, search.ESConfig{
+		Addresses: []string{os.Getenv("ELASTICSEARCH_URL")},
+		APIKey:    os.Getenv("ELASTICSEARCH_API_KEY"),
+	})
+	if err != nil {
+		panic(err)
+	}
+	var searchEngine search.Engine = elasticsearch
+	s3Store, err := storage.NewS3Client(ctx, storage.S3Config{Bucket: "my-bucket", Region: "us-east-1"})
+	if err != nil {
+		panic(err)
+	}
+	var storageProvider storage.Provider = s3Store
 
 	// Initialize goplusplus App Engine
 	app := gpp.New()

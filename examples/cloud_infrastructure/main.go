@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	gpp "github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/dbcore"
@@ -19,10 +22,36 @@ func main() {
 
 	// 1. Initialize Infrastructure Adapters
 	sqliteDB, _ := dbcore.NewSQLiteClient("app.db")
-	s3Client := storage.NewS3Client(storage.S3Config{Bucket: "my-app-assets", Region: "us-east-1"})
-	esClient := search.NewElasticsearchClient(search.ESConfig{})
-	kafkaWorker := queue.NewKafkaWorker([]string{"localhost:9092"}, "user-events")
-	rabbitBus := pubsub.NewRabbitMQBus("amqp://localhost:5672")
+	s3Client, err := storage.NewS3Client(ctx, storage.S3Config{Bucket: "my-app-assets", Region: "us-east-1"})
+	if err != nil {
+		panic(err)
+	}
+	esClient, err := search.NewElasticsearchClient(ctx, search.ESConfig{
+		Addresses: []string{os.Getenv("ELASTICSEARCH_URL")},
+		APIKey:    os.Getenv("ELASTICSEARCH_API_KEY"),
+	})
+	if err != nil {
+		panic(err)
+	}
+	kafkaWorker, err := queue.NewKafkaProducer(ctx, queue.KafkaProducerConfig{
+		KafkaConfig: queue.KafkaConfig{Brokers: strings.Split(os.Getenv("KAFKA_BROKERS"), ",")},
+		Topic:       "user-events",
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = kafkaWorker.Close(closeCtx)
+	}()
+	rabbitBus, err := pubsub.NewRabbitMQBus(ctx, pubsub.RabbitMQConfig{
+		URL: os.Getenv("RABBITMQ_URL"), Exchange: "user_events",
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer rabbitBus.Close()
 
 	// 2. Initialize goplusplus Application Engine
 	app := gpp.New()

@@ -1,17 +1,27 @@
 package tracing_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/saifsilver/goplusplus"
 	"github.com/saifsilver/goplusplus/tracing"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestTracingMiddleware(t *testing.T) {
+func TestTracingMiddlewareCreatesAndExportsServerSpan(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider, err := tracing.NewProvider(context.Background(), tracing.Config{
+		ServiceName: "test-api", Exporter: exporter,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Shutdown(context.Background())
 	app := gpp.New()
-	app.Use(tracing.Middleware())
+	app.Use(provider.Middleware())
 
 	var extractedTraceID string
 	app.GET("/traced", func(c *gpp.Context) error {
@@ -19,25 +29,42 @@ func TestTracingMiddleware(t *testing.T) {
 		return c.String(http.StatusOK, "ok")
 	})
 
-	// Case 1: Provided X-Trace-ID
-	req1 := httptest.NewRequest(http.MethodGet, "/traced", nil)
-	req1.Header.Set("X-Trace-ID", "trace_abc123")
-	w1 := httptest.NewRecorder()
-	app.ServeHTTP(w1, req1)
-
-	if extractedTraceID != "trace_abc123" {
-		t.Errorf("expected trace_abc123, got %s", extractedTraceID)
+	request := httptest.NewRequest(http.MethodGet, "/traced", nil)
+	request.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, request)
+	if err := provider.ForceFlush(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	if w1.Header().Get("X-Trace-ID") != "trace_abc123" {
-		t.Errorf("expected header X-Trace-ID trace_abc123")
+	if extractedTraceID != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("trace ID = %s", extractedTraceID)
 	}
+	if response.Header().Get("X-Trace-ID") != extractedTraceID {
+		t.Fatalf("response trace ID = %s", response.Header().Get("X-Trace-ID"))
+	}
+	spans := exporter.GetSpans()
+	if len(spans) != 1 || spans[0].Name != "GET /traced" {
+		t.Fatalf("exported spans = %#v", spans)
+	}
+	if spans[0].Parent.SpanID().String() != "00f067aa0ba902b7" {
+		t.Fatalf("parent span ID = %s", spans[0].Parent.SpanID())
+	}
+}
 
-	// Case 2: Generated X-Trace-ID
-	req2 := httptest.NewRequest(http.MethodGet, "/traced", nil)
-	w2 := httptest.NewRecorder()
-	app.ServeHTTP(w2, req2)
-
-	if extractedTraceID == "" || extractedTraceID == "untraced" {
-		t.Errorf("expected generated trace ID, got %s", extractedTraceID)
+func TestTracingProviderConfigurationFailsClosed(t *testing.T) {
+	if _, err := tracing.NewProvider(context.Background(), tracing.Config{}); err == nil {
+		t.Fatal("expected missing service name to fail")
+	}
+	if _, err := tracing.NewProvider(context.Background(), tracing.Config{ServiceName: "api"}); err == nil {
+		t.Fatal("expected missing exporter to fail")
+	}
+	app := gpp.New()
+	var provider *tracing.Provider
+	app.Use(provider.Middleware())
+	app.GET("/", func(c *gpp.Context) error { return c.NoContent() })
+	response := httptest.NewRecorder()
+	app.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code < 500 {
+		t.Fatalf("status = %d", response.Code)
 	}
 }
