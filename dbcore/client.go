@@ -3,104 +3,211 @@ package dbcore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// Config defines database connection pooling parameters for primary (RW) and replica (RO).
+// Config defines PostgreSQL primary/replica connection and pool parameters.
+// RWDSN is required. RODSN is optional; reads use the primary when it is empty.
 type Config struct {
 	RWDSN                    string
 	RODSN                    string
 	PgBouncerTransactionMode bool
+	MaxOpenConnections       int
+	MaxIdleConnections       int
+	ConnectionMaxLifetime    time.Duration
+	ConnectionMaxIdleTime    time.Duration
+	PingTimeout              time.Duration
 	SlowQuery                SlowQueryConfig
 }
 
-// Client abstracts PostgreSQL primary/replica connection pooling, retries, and slow query observability.
+// Client owns PostgreSQL primary/replica pools. For backwards compatibility,
+// NewClient also accepts the explicit SQLite test DSNs ":memory:" and "file:".
 type Client struct {
-	cfg SlowQueryConfig
-	db  *sql.DB
+	cfg      SlowQueryConfig
+	rw       *sql.DB
+	ro       *sql.DB
+	dialect  string
+	close    sync.Once
+	closeErr error
 }
 
 type queryCacheKey struct{}
 
-// WithCache decorates a context with an automatic query caching TTL.
 func WithCache(ctx context.Context, ttl time.Duration) context.Context {
 	return context.WithValue(ctx, queryCacheKey{}, ttl)
 }
 
-// GetCacheTTL extracts query cache TTL from context if set.
 func GetCacheTTL(ctx context.Context) (time.Duration, bool) {
 	ttl, ok := ctx.Value(queryCacheKey{}).(time.Duration)
 	return ttl, ok
 }
 
-// NewClient initializes a new dbcore Client instance.
+// NewClient opens the configured database. PostgreSQL is selected for
+// postgres:// and postgresql:// DSNs. Explicit SQLite memory/file DSNs are
+// retained for test compatibility; applications should prefer OpenSQLite.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
-	if cfg.SlowQuery.Threshold <= 0 {
-		cfg.SlowQuery.Threshold = 250 * time.Millisecond
+	dsn := strings.TrimSpace(cfg.RWDSN)
+	if dsn == ":memory:" || strings.HasPrefix(dsn, "file:") {
+		return openCompatibilitySQLite(ctx, cfg)
 	}
-
-	db, err := sql.Open("gpp_inmem", "file::memory:")
-	if err != nil {
-		return nil, fmt.Errorf("dbcore: failed opening database client: %w", err)
-	}
-
-	return &Client{
-		cfg: cfg.SlowQuery,
-		db:  db,
-	}, nil
+	return NewPostgresClient(ctx, cfg)
 }
 
-// Exec executes a primary write statement (INSERT/UPDATE/DELETE).
+// NewPostgresClient opens and verifies real PostgreSQL primary and optional
+// replica pools. It never falls back to an in-memory database.
+func NewPostgresClient(ctx context.Context, cfg Config) (*Client, error) {
+	if err := validatePostgresConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	rw, err := openPostgresPool(ctx, cfg.RWDSN, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("dbcore/postgres: open primary: %w", err)
+	}
+
+	ro := rw
+	if strings.TrimSpace(cfg.RODSN) != "" {
+		ro, err = openPostgresPool(ctx, cfg.RODSN, cfg)
+		if err != nil {
+			_ = rw.Close()
+			return nil, fmt.Errorf("dbcore/postgres: open replica: %w", err)
+		}
+	}
+
+	return &Client{cfg: normalizeSlowQuery(cfg.SlowQuery), rw: rw, ro: ro, dialect: "postgres"}, nil
+}
+
+func validatePostgresConfig(cfg Config) error {
+	if err := validatePoolConfig(cfg); err != nil {
+		return fmt.Errorf("dbcore/postgres: %w", err)
+	}
+	if err := validatePostgresDSN(cfg.RWDSN, "RWDSN"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.RODSN) != "" {
+		if err := validatePostgresDSN(cfg.RODSN, "RODSN"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePostgresDSN(dsn, field string) error {
+	parsed, err := url.Parse(strings.TrimSpace(dsn))
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Host == "" || strings.TrimPrefix(parsed.Path, "/") == "" {
+		return fmt.Errorf("dbcore/postgres: %s must be a valid postgres:// or postgresql:// DSN", field)
+	}
+	return nil
+}
+
+func validatePoolConfig(cfg Config) error {
+	if cfg.MaxOpenConnections < 0 || cfg.MaxIdleConnections < 0 {
+		return errors.New("connection limits cannot be negative")
+	}
+	if cfg.MaxOpenConnections > 0 && cfg.MaxIdleConnections > cfg.MaxOpenConnections {
+		return errors.New("maximum idle connections cannot exceed maximum open connections")
+	}
+	if cfg.ConnectionMaxLifetime < 0 || cfg.ConnectionMaxIdleTime < 0 || cfg.PingTimeout < 0 {
+		return errors.New("connection durations cannot be negative")
+	}
+	return nil
+}
+
+func openPostgresPool(ctx context.Context, dsn string, cfg Config) (*sql.DB, error) {
+	parsed, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, errors.New("invalid PostgreSQL connection configuration")
+	}
+	if cfg.PgBouncerTransactionMode {
+		parsed.DefaultQueryExecMode = pgx.QueryExecModeExec
+	}
+	db := stdlib.OpenDB(*parsed)
+	configurePool(db, cfg)
+	pingCtx := ctx
+	cancel := func() {}
+	if cfg.PingTimeout > 0 {
+		pingCtx, cancel = context.WithTimeout(ctx, cfg.PingTimeout)
+	}
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		_ = db.Close()
+		return nil, ClassifyError(err)
+	}
+	return db, nil
+}
+
+func configurePool(db *sql.DB, cfg Config) {
+	if cfg.MaxOpenConnections > 0 {
+		db.SetMaxOpenConns(cfg.MaxOpenConnections)
+	}
+	if cfg.MaxIdleConnections > 0 {
+		db.SetMaxIdleConns(cfg.MaxIdleConnections)
+	}
+	db.SetConnMaxLifetime(cfg.ConnectionMaxLifetime)
+	db.SetConnMaxIdleTime(cfg.ConnectionMaxIdleTime)
+}
+
+func normalizeSlowQuery(cfg SlowQueryConfig) SlowQueryConfig {
+	if cfg.Threshold <= 0 {
+		defaults := DefaultSlowQueryConfig()
+		cfg.Threshold = defaults.Threshold
+		if cfg.MaxSQLLength == 0 {
+			cfg.OmitSQL = defaults.OmitSQL
+		}
+	}
+	return cfg
+}
+
+func (c *Client) Dialect() string { return c.dialect }
+func (c *Client) DB() *sql.DB     { return c.rw }
+func (c *Client) ReadDB() *sql.DB { return c.ro }
+
 func (c *Client) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	start := time.Now()
-	res, err := c.db.ExecContext(ctx, query, args...)
-	duration := time.Since(start)
-	LogSlowQuery(ctx, c.cfg, "rw", "write", query, duration, len(args), err)
+	res, err := c.rw.ExecContext(ctx, query, args...)
+	LogSlowQuery(ctx, c.cfg, "rw", "write", query, time.Since(start), len(args), err)
 	if err != nil {
-		return nil, err
+		return nil, ClassifyError(err)
 	}
 	return res, nil
 }
 
-// ExecContext implements database/sql-style execution for framework adapters that accept a SQLDatabase.
 func (c *Client) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.Exec(ctx, query, args...)
 }
 
-// ExecIdempotent executes a retry-safe write statement with automatic retry logic.
 func (c *Client) ExecIdempotent(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.Exec(ctx, query, args...)
 }
 
-// ParallelTask defines a single SQL query execution payload for concurrent batch execution.
 type ParallelTask struct {
 	QueryName string
 	SQL       string
 	Args      []any
 }
 
-// ParallelQuery executes multiple database queries concurrently across replicas in parallel goroutines.
 func (c *Client) ParallelQuery(ctx context.Context, tasks ...ParallelTask) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(tasks))
-
 	for _, task := range tasks {
 		wg.Add(1)
 		go func(t ParallelTask) {
 			defer wg.Done()
-			taskCtx := WithQueryName(ctx, t.QueryName)
-			err := c.Query(taskCtx, t.SQL, nil, t.Args...)
-			if err != nil {
+			if err := c.Query(WithQueryName(ctx, t.QueryName), t.SQL, nil, t.Args...); err != nil {
 				errChan <- err
 			}
 		}(task)
 	}
-
 	wg.Wait()
 	close(errChan)
-
 	for err := range errChan {
 		if err != nil {
 			return err
@@ -109,79 +216,103 @@ func (c *Client) ParallelQuery(ctx context.Context, tasks ...ParallelTask) error
 	return nil
 }
 
-// QueryRow executes a single row read query, routing to replica (RO) or primary (RW).
-func (c *Client) QueryRow(ctx context.Context, query string, fn func(row *sql.Row) error, args ...any) error {
+func (c *Client) QueryRow(ctx context.Context, query string, fn func(*sql.Row) error, args ...any) error {
 	start := time.Now()
-	row := c.db.QueryRowContext(ctx, query, args...)
+	row := c.ro.QueryRowContext(ctx, query, args...)
 	var err error
 	if fn != nil {
 		err = fn(row)
 	}
-	duration := time.Since(start)
-	LogSlowQuery(ctx, c.cfg, "ro", "read_one", query, duration, len(args), err)
+	LogSlowQuery(ctx, c.cfg, "ro", "read_one", query, time.Since(start), len(args), err)
 	return err
 }
 
-// Query executes a multi-row read query, routing to replica (RO) or primary (RW).
-func (c *Client) Query(ctx context.Context, query string, fn func(rows *sql.Rows) error, args ...any) error {
+func (c *Client) Query(ctx context.Context, query string, fn func(*sql.Rows) error, args ...any) error {
 	start := time.Now()
-	rows, err := c.db.QueryContext(ctx, query, args...)
-	duration := time.Since(start)
-	LogSlowQuery(ctx, c.cfg, "ro", "read_many", query, duration, len(args), err)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	if fn != nil {
-		return fn(rows)
-	}
-	return nil
-}
-
-// QueryContext implements database/sql-style querying while preserving slow-query observability.
-// The caller owns and must close the returned rows.
-func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	start := time.Now()
-	rows, err := c.db.QueryContext(ctx, query, args...)
+	rows, err := c.ro.QueryContext(ctx, query, args...)
 	LogSlowQuery(ctx, c.cfg, "ro", "read_many", query, time.Since(start), len(args), err)
 	if err != nil {
-		return nil, err
+		return ClassifyError(err)
+	}
+	defer rows.Close()
+	if fn != nil {
+		if err := fn(rows); err != nil {
+			return err
+		}
+	}
+	return ClassifyError(rows.Err())
+}
+
+func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	start := time.Now()
+	rows, err := c.ro.QueryContext(ctx, query, args...)
+	LogSlowQuery(ctx, c.cfg, "ro", "read_many", query, time.Since(start), len(args), err)
+	if err != nil {
+		return nil, ClassifyError(err)
 	}
 	return rows, nil
 }
 
-// InTx executes a function inside a primary database transaction.
-func (c *Client) InTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+func (c *Client) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return c.ro.QueryRowContext(ctx, query, args...)
+}
+
+func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	tx, err := c.rw.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, ClassifyError(err)
+	}
+	return tx, nil
+}
+
+func (c *Client) InTx(ctx context.Context, fn func(*sql.Tx) error) (err error) {
+	if fn == nil {
+		return errors.New("dbcore: transaction callback is nil")
+	}
 	start := time.Now()
-	tx, err := c.db.BeginTx(ctx, nil)
+	tx, err := c.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-
-	defer func() {
-		duration := time.Since(start)
-		LogSlowQuery(ctx, c.cfg, "rw", "tx", "BEGIN ... COMMIT", duration, 0, err)
-	}()
-
+	defer func() { LogSlowQuery(ctx, c.cfg, "rw", "tx", "transaction", time.Since(start), 0, err) }()
 	if err = fn(tx); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	return ClassifyError(tx.Commit())
 }
 
-// Stats returns connection pool statistics.
+func (c *Client) PingContext(ctx context.Context) error { return ClassifyError(c.rw.PingContext(ctx)) }
+
 func (c *Client) Stats() map[string]any {
+	rw := c.rw.Stats()
+	ro := c.ro.Stats()
+	active, idle := rw.InUse, rw.Idle
+	if c.ro != c.rw {
+		active += ro.InUse
+		idle += ro.Idle
+	}
 	return map[string]any{
-		"active_connections": 5,
-		"idle_connections":   15,
-		"primary_healthy":    true,
-		"replica_healthy":    true,
+		"dialect": c.dialect, "active_connections": active,
+		"idle_connections": idle, "primary_healthy": boundedPing(c.rw),
+		"replica_healthy": boundedPing(c.ro),
 	}
 }
 
-// Close gracefully closes database connection pools.
+func boundedPing(db *sql.DB) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return db.PingContext(ctx) == nil
+}
+
 func (c *Client) Close() error {
-	return c.db.Close()
+	c.close.Do(func() {
+		if c.ro != nil && c.ro != c.rw {
+			c.closeErr = c.ro.Close()
+		}
+		if c.rw != nil {
+			c.closeErr = errors.Join(c.closeErr, c.rw.Close())
+		}
+	})
+	return c.closeErr
 }

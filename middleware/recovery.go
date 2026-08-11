@@ -21,7 +21,7 @@ func Recovery() gpp.HandlerFunc {
 					slog.String("request_id", c.RequestID()),
 				)
 				c.Abort()
-				_ = c.JSON(http.StatusInternalServerError, gpp.ProblemDetails{
+				_ = c.Problem(gpp.ProblemDetails{
 					Type: "https://goplusplus.dev/errors/internal-error", Title: "Internal Server Error",
 					Status: http.StatusInternalServerError, Detail: "An internal server error occurred",
 					Instance: c.Request.URL.Path, TraceID: c.RequestID(),

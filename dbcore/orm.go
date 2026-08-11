@@ -362,7 +362,11 @@ func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
 
 			// Auto-increment for integer PKs without auto_id strategy
 			if o.meta.autoIDStrategy == "" && isIntegerKind(fieldType.Kind()) {
-				sqlCols = append(sqlCols, fmt.Sprintf("%s %s PRIMARY KEY AUTOINCREMENT", colName, colType))
+				if o.client.Dialect() == "postgres" {
+					sqlCols = append(sqlCols, fmt.Sprintf("%s BIGSERIAL PRIMARY KEY", colName))
+				} else {
+					sqlCols = append(sqlCols, fmt.Sprintf("%s INTEGER PRIMARY KEY AUTOINCREMENT", colName))
+				}
 				continue
 			}
 

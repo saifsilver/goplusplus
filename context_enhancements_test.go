@@ -126,6 +126,9 @@ func TestBindResourceSuite(t *testing.T) {
 	defer client.Close()
 
 	repo := dbcore.NewRepository[TestItem](client, "test_items")
+	if _, err := client.Exec(ctx, `CREATE TABLE test_items (id INTEGER PRIMARY KEY, name TEXT, value INTEGER)`); err != nil {
+		t.Fatalf("failed creating application-owned test schema: %v", err)
+	}
 
 	app := gpp.New()
 	v1 := app.Group("/api/v1")

@@ -15,6 +15,7 @@ import (
 // UserClaims holds verified user identity, roles, attributes, and tenant context.
 type UserClaims struct {
 	ID         string            `json:"id"`
+	Subject    string            `json:"sub,omitempty"`
 	Email      string            `json:"email"`
 	Roles      []string          `json:"roles"`
 	Attributes map[string]string `json:"attributes"`
@@ -33,7 +34,7 @@ func (u *UserClaims) HasRole(role string) bool {
 
 // GetUser extracts verified UserClaims from the context.
 func GetUser(c *gpp.Context) (*UserClaims, bool) {
-	value, ok := c.Get("user")
+	value, ok := c.Get(identityClaimsKey)
 	if !ok {
 		return nil, false
 	}

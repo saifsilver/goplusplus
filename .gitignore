@@ -19,3 +19,4 @@ multi_protocol
 cmd.log
 docs/plans
 docs/v2/implementation_plan.md
+.cache-race/

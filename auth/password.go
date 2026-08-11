@@ -53,10 +53,7 @@ func HashPasswordWithConfig(password string, pepper []byte, config PasswordConfi
 		return "", errors.New("auth: password salt generation failed")
 	}
 	key := derivePasswordKey(password, pepper, salt, config)
-	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, config.Memory, config.Iterations, config.Parallelism,
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key),
-	), nil
+	return encodeArgon2idHash(config, salt, key), nil
 }
 
 // VerifyPassword verifies only Argon2id hashes. Use VerifyLegacyPassword explicitly for migration.
@@ -67,6 +64,7 @@ func VerifyPassword(password, secret, encodedHash string) bool {
 
 // VerifyPasswordWithMigration verifies Argon2id or an explicitly recognized legacy HMAC hash.
 // needsUpgrade is true only for a valid legacy hash or weaker Argon2id parameters.
+// Deprecated: use PasswordPolicy.Verify for explicit compatibility deadlines and timing protection.
 func VerifyPasswordWithMigration(password, secret, encodedHash string) (valid, needsUpgrade bool) {
 	if strings.HasPrefix(encodedHash, "$argon2id$") {
 		valid, config := verifyArgon2idPassword(password, []byte(secret), encodedHash)
@@ -83,28 +81,56 @@ func NeedsRehash(encodedHash string, desired PasswordConfig) bool {
 }
 
 // HashLegacyPassword reproduces the pre-v1.11 HMAC format for controlled migrations only.
+// Deprecated: legacy formats are verification-only; retain only in migration tests.
 func HashLegacyPassword(password, secret string) string {
+	if len(password) == 0 || len(password) > maxPasswordBytes || len(secret) < 16 || len(secret) > 1024 {
+		return ""
+	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(password))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 // VerifyLegacyPassword verifies the pre-v1.11 HMAC format in constant time.
+// Deprecated: use PasswordPolicy with LegacyV1 and an explicit acceptance deadline.
 func VerifyLegacyPassword(password, secret, expectedHash string) bool {
-	if expectedHash == "" || len(secret) < 16 {
+	if len(password) == 0 || len(password) > maxPasswordBytes || len(secret) < 16 || len(secret) > 1024 ||
+		len(expectedHash) > maxEncodedPasswordHashBytes {
 		return false
 	}
-	actual := HashLegacyPassword(password, secret)
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expectedHash)) == 1
+	verifier := legacyV1PasswordVerifier{pepper: []byte(secret)}
+	valid, err := verifier.VerifyPassword(password, expectedHash)
+	return err == nil && valid
 }
 
 func verifyArgon2idPassword(password string, pepper []byte, encodedHash string) (bool, *PasswordConfig) {
+	return verifyArgon2idPasswordWithDeriver(password, pepper, encodedHash, derivePasswordKey)
+}
+
+func verifyArgon2idPasswordWithDeriver(password string, pepper []byte, encodedHash string, derive passwordDeriver) (bool, *PasswordConfig) {
 	config, salt, expected, err := parseArgon2idHash(encodedHash)
-	if err != nil || len(password) == 0 || len(password) > maxPasswordBytes || len(pepper) < 16 || len(pepper) > 1024 {
+	if err != nil || derive == nil || len(password) == 0 || len(password) > maxPasswordBytes || len(pepper) < 16 || len(pepper) > 1024 {
 		return false, nil
 	}
-	actual := derivePasswordKey(password, pepper, salt, config)
+	actual := derive(password, pepper, salt, config)
 	return subtle.ConstantTimeCompare(actual, expected) == 1, &config
+}
+
+type legacyV1PasswordVerifier struct {
+	pepper []byte
+}
+
+func (verifier *legacyV1PasswordVerifier) VerifyPassword(password, encodedHash string) (bool, error) {
+	if len(encodedHash) != base64.RawURLEncoding.EncodedLen(sha256.Size) {
+		return false, ErrPasswordFormatNotRecognized
+	}
+	expected, err := base64.RawURLEncoding.Strict().DecodeString(encodedHash)
+	if err != nil || len(expected) != sha256.Size {
+		return false, ErrPasswordFormatNotRecognized
+	}
+	mac := hmac.New(sha256.New, verifier.pepper)
+	_, _ = mac.Write([]byte(password))
+	return subtle.ConstantTimeCompare(mac.Sum(nil), expected) == 1, nil
 }
 
 func parseArgon2idHash(encodedHash string) (PasswordConfig, []byte, []byte, error) {

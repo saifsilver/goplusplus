@@ -157,7 +157,7 @@ adminGroup.Use(
 | **Bind & Validate** | `c.BindAndValidate(&struct)` |
 | **Path Parameter** | `c.Param("id")`, `id := c.ParamInt64("id")`, `c.ParamInt("id")` |
 | **Query Parameter** | `c.Query("q")` or `c.QueryDefault("page", "1")` |
-| **Get Authenticated User ID** | `id := c.UserID()` or `id, err := c.RequireUserID()` |
+| **Get Authenticated Identity** | `subject, err := c.RequireUserSubject()` (UUID/string) or `id, err := c.RequireUserID()` (numeric) |
 | **Get Typed Context Key** | `userID := c.GetInt64("user_id")` or `id := c.GetInt("id")` |
 | **Get Context Any Value** | `val := c.GetAny("key")` or `val := c.Value("key")` |
 | **Get Generic Context Value** | `val, ok := gpp.GetAs[User](c, "user")` |
@@ -170,7 +170,7 @@ adminGroup.Use(
 | **Install Pre-Push Gate** | `make install-hooks` |
 | **Test/Coverage/Security Gate** | `make verify` |
 | **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
-| **Password Hashing & JWT** | `hash, err := auth.HashPasswordWithConfig(pass, pepper, auth.DefaultPasswordConfig())` & `token := auth.GenerateToken(userID, signingKey, 15*time.Minute)` |
+| **Password Policy & JWT** | `passwords, err := auth.NewPasswordPolicy(...)`, `hash, err := passwords.Hash(pass)` & `token, err := tokens.IssueUser(claims, 15*time.Minute)` |
 | **ULID (K-Sortable)** | `id.NewULID()` → `"01JEX89K2P3M4N5Q6R7S8T9VWX"` |
 | **Snowflake (64-bit int)** | `node, _ := id.NewSnowflakeNode(1)` & `node.NextID()` or `id.NewSnowflake()` |
 | **UUID v4 / UUID v7** | `id.NewUUID()` (random) or `id.NewUUIDv7()` (time-ordered, k-sortable) |

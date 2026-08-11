@@ -2,6 +2,7 @@ package dbcore
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -35,7 +36,7 @@ func DefaultSlowQueryConfig() SlowQueryConfig {
 	return SlowQueryConfig{
 		Threshold:    250 * time.Millisecond,
 		MaxSQLLength: 1500,
-		OmitSQL:      false,
+		OmitSQL:      true,
 	}
 }
 
@@ -103,7 +104,11 @@ func AnalyzeQuery(sql string) []string {
 // LogSlowQuery logs a slow query event to slog without logging bind arguments (PII protection).
 func LogSlowQuery(ctx context.Context, cfg SlowQueryConfig, role, operation, sql string, duration time.Duration, argsCount int, err error) {
 	if cfg.Threshold <= 0 {
-		cfg.Threshold = 250 * time.Millisecond
+		defaults := DefaultSlowQueryConfig()
+		cfg.Threshold = defaults.Threshold
+		if cfg.MaxSQLLength == 0 {
+			cfg.OmitSQL = defaults.OmitSQL
+		}
 	}
 
 	if duration < cfg.Threshold {
@@ -134,7 +139,11 @@ func LogSlowQuery(ctx context.Context, cfg SlowQueryConfig, role, operation, sql
 	}
 
 	if err != nil {
-		event.Error = err.Error()
+		event.Error = "operation_failed"
+		var databaseError *DatabaseError
+		if errors.As(err, &databaseError) {
+			event.Error = string(databaseError.Kind)
+		}
 	}
 
 	logAttrs := []any{

@@ -87,6 +87,10 @@ func (manager *RedisSessionManager) CreateSession(c *gpp.Context, claims UserCla
 	if manager == nil || c == nil {
 		return ""
 	}
+	verified, _, _, err := canonicalUserClaims(claims)
+	if err != nil {
+		return ""
+	}
 	if c.Request != nil {
 		if old, err := c.Request.Cookie(manager.cookieName); err == nil {
 			manager.RevokeSession(old.Value)
@@ -105,7 +109,7 @@ func (manager *RedisSessionManager) CreateSession(c *gpp.Context, claims UserCla
 		manager.mu.Unlock()
 		return ""
 	}
-	manager.store[identifier] = sessionRecord{claims: cloneUserClaims(claims), expiresAt: expiresAt}
+	manager.store[identifier] = sessionRecord{claims: cloneUserClaims(verified), expiresAt: expiresAt}
 	manager.mu.Unlock()
 
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -127,11 +131,14 @@ func (manager *RedisSessionManager) RevokeSession(identifier string) {
 
 func (manager *RedisSessionManager) SessionMiddleware() gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
+		clearVerifiedIdentity(c)
 		claims, ok := manager.claimsForRequest(c)
 		if !ok {
 			return gpp.ErrUnauthorized("Missing, invalid, or expired session")
 		}
-		c.Set("user", claims)
+		if err := installVerifiedIdentity(c, *claims); err != nil {
+			return gpp.ErrUnauthorized("Missing, invalid, or expired session")
+		}
 		return c.Next()
 	}
 }
@@ -155,12 +162,15 @@ func (manager *RedisSessionManager) claimsForRequest(c *gpp.Context) (*UserClaim
 		return nil, false
 	}
 	claims := cloneUserClaims(record.claims)
+	if _, _, _, err := canonicalUserClaims(claims); err != nil {
+		return nil, false
+	}
 	return &claims, true
 }
 
 func cloneUserClaims(source UserClaims) UserClaims {
 	return UserClaims{
-		ID: source.ID, Email: source.Email, Roles: append([]string(nil), source.Roles...),
+		ID: source.ID, Subject: source.Subject, Email: source.Email, Roles: append([]string(nil), source.Roles...),
 		Attributes: cloneStringMap(source.Attributes), TenantID: source.TenantID,
 	}
 }

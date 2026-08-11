@@ -315,7 +315,20 @@ func defaultNotFoundHandler(c *Context) error {
 }
 
 func defaultErrorHandler(c *Context, err error) {
-	if c.IsAborted() {
+	if c.IsAborted() || c.written || c.response != nil && c.response.written {
+		return
+	}
+	var internal *InternalFailure
+	if errors.As(err, &internal) {
+		logInternalRequestError(c, err)
+		detail := "An internal server error occurred"
+		if internal.PublicDetail != "" {
+			detail = internal.PublicDetail
+		}
+		_ = c.Problem(ProblemDetails{
+			Type: "https://goplusplus.dev/errors/" + internal.Category, Title: "Internal Server Error",
+			Status: internal.Status, Detail: detail, Instance: c.Request.URL.Path, TraceID: c.RequestID(),
+		})
 		return
 	}
 	var probErr *ProblemDetails
@@ -331,14 +344,14 @@ func defaultErrorHandler(c *Context, err error) {
 			response.Errors = nil
 		}
 		response.TraceID = c.RequestID()
-		_ = c.JSON(response.Status, &response)
+		_ = c.Problem(response)
 		return
 	}
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		if httpErr.Code >= http.StatusInternalServerError {
 			logInternalRequestError(c, err)
-			_ = c.JSON(httpErr.Code, ProblemDetails{
+			_ = c.Problem(ProblemDetails{
 				Type: "https://goplusplus.dev/errors/internal-error", Title: "Internal Server Error",
 				Status: httpErr.Code, Detail: "An internal server error occurred",
 				Instance: c.Request.URL.Path, TraceID: c.RequestID(),
@@ -353,7 +366,7 @@ func defaultErrorHandler(c *Context, err error) {
 		return
 	}
 	logInternalRequestError(c, err)
-	_ = c.JSON(http.StatusInternalServerError, ProblemDetails{
+	_ = c.Problem(ProblemDetails{
 		Type:     "https://goplusplus.dev/errors/internal-error",
 		Title:    "Internal Server Error",
 		Status:   http.StatusInternalServerError,
@@ -364,9 +377,15 @@ func defaultErrorHandler(c *Context, err error) {
 }
 
 func logInternalRequestError(c *Context, err error) {
-	slog.Error("gpp: request failed",
-		slog.String("error", err.Error()),
-		slog.String("request_id", c.RequestID()),
-		slog.String("path", c.Request.URL.Path),
-	)
+	operation := "http.request"
+	category := "internal_error"
+	cause := err
+	attributes := map[string]any(nil)
+	var internal *InternalFailure
+	if errors.As(err, &internal) {
+		operation, category, cause, attributes = internal.Operation, internal.Category, internal.Cause, internal.Attributes
+	}
+	slog.Error("gpp: request failed", slog.Any("error", cause), slog.String("operation", operation),
+		slog.String("category", category), slog.String("request_id", c.RequestID()),
+		slog.String("path", c.Request.URL.Path), slog.Any("attributes", attributes))
 }

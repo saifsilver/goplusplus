@@ -276,7 +276,7 @@ func BindResource[T any](group *RouterGroup, relativePath string, repo *dbcore.R
 		page, limit := c.GetPageAndLimit(20)
 		items, total, err := repo.Paginate(c.Request.Context(), page, limit)
 		if err != nil {
-			return c.InternalError(err.Error())
+			return NewInternalError("resource.list", err, WithErrorCategory("database"))
 		}
 		return c.Paginate(http.StatusOK, items, page, limit, total)
 	})
@@ -296,7 +296,7 @@ func BindResource[T any](group *RouterGroup, relativePath string, repo *dbcore.R
 			return err
 		}
 		if err := repo.Create(c.Request.Context(), &entity); err != nil {
-			return c.InternalError(err.Error())
+			return NewInternalError("resource.create", err, WithErrorCategory("database"))
 		}
 		return c.Created(entity)
 	})
@@ -308,7 +308,7 @@ func BindResource[T any](group *RouterGroup, relativePath string, repo *dbcore.R
 			return err
 		}
 		if err := repo.Update(c.Request.Context(), id, &entity); err != nil {
-			return c.InternalError(err.Error())
+			return NewInternalError("resource.update", err, WithErrorCategory("database"))
 		}
 		return c.OK(entity)
 	})

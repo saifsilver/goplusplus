@@ -1,6 +1,7 @@
 package gpp
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -106,4 +107,82 @@ func ErrInternal(detail string) *ProblemDetails {
 		Status: http.StatusInternalServerError,
 		Detail: detail,
 	}
+}
+
+// InternalFailure is a causal server-side failure. Only PublicDetail and the
+// stable category are eligible for client rendering; Cause and Attributes are
+// logged internally.
+type InternalFailure struct {
+	Operation    string
+	Category     string
+	Cause        error
+	Attributes   map[string]any
+	PublicDetail string
+	Status       int
+}
+
+func (e *InternalFailure) Error() string {
+	return fmt.Sprintf("internal failure in %s [%s]", e.Operation, e.Category)
+}
+
+func (e *InternalFailure) Unwrap() error { return e.Cause }
+
+type InternalErrorOption func(*InternalFailure)
+
+func WithErrorCategory(category string) InternalErrorOption {
+	return func(failure *InternalFailure) {
+		if category != "" {
+			failure.Category = category
+		}
+	}
+}
+
+// WithPublicDetail opts into a caller-authored, non-sensitive 5xx detail.
+func WithPublicDetail(detail string) InternalErrorOption {
+	return func(failure *InternalFailure) { failure.PublicDetail = detail }
+}
+
+func WithSafeAttributes(attributes map[string]any) InternalErrorOption {
+	return func(failure *InternalFailure) {
+		failure.Attributes = make(map[string]any, len(attributes))
+		for key, value := range attributes {
+			failure.Attributes[key] = value
+		}
+	}
+}
+
+func WithInternalStatus(status int) InternalErrorOption {
+	return func(failure *InternalFailure) {
+		if status >= http.StatusInternalServerError && status <= 599 {
+			failure.Status = status
+		}
+	}
+}
+
+// NewInternalError preserves cause identity while keeping the response safe.
+func NewInternalError(operation string, cause error, options ...InternalErrorOption) *InternalFailure {
+	if cause == nil {
+		cause = errors.New("unspecified internal failure")
+	}
+	failure := &InternalFailure{
+		Operation: operation,
+		Category:  "internal_error",
+		Cause:     cause,
+		Status:    http.StatusInternalServerError,
+	}
+	for _, option := range options {
+		if option != nil {
+			option(failure)
+		}
+	}
+	return failure
+}
+
+func IsInternalFailure(err error) bool {
+	var failure *InternalFailure
+	if errors.As(err, &failure) {
+		return true
+	}
+	var problem *ProblemDetails
+	return errors.As(err, &problem) && problem.Status >= http.StatusInternalServerError
 }

@@ -24,6 +24,8 @@ v1.11 hardens validation, JSON binding, authentication, error responses, and emb
 - Placeholder PASETO generation and acceptance are disabled. Use signed JWTs until a complete PASETO implementation is introduced.
 - Session identifiers are cryptographically random, rotate during authentication, expire server-side, and set bounded `HttpOnly` cookies. The compatibility `RedisSessionManager` remains process-local; use an application-managed shared store for multi-instance deployments.
 
+For the post-v1.11.1 canonical identity, password policy, and bounded historical-format APIs, continue with [MIGRATION_v1.11.1_AUTH.md](MIGRATION_v1.11.1_AUTH.md).
+
 ## Errors and static files
 
 - Unhandled errors and recovered panics are logged with request IDs but return generic Problem Details. Internal `error.Error()` strings are no longer sent to clients.

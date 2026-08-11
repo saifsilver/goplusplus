@@ -85,7 +85,7 @@ func TestTokenClaimsTamperingExpiryAndRotation(t *testing.T) {
 		t.Fatalf("verify token: %+v %v", claims, err)
 	}
 
-	tampered := token[:len(token)-1] + "A"
+	tampered := tamperToken(token)
 	if _, err := manager.Verify(tampered); err == nil {
 		t.Fatal("tampered token verified")
 	}
@@ -254,7 +254,12 @@ func TestTOTPAndDisabledPASETO(t *testing.T) {
 func TestRBACAndABAC(t *testing.T) {
 	claims := &UserClaims{ID: "7", Roles: []string{"admin"}, Attributes: map[string]string{"department": "finance"}}
 	app := gpp.New()
-	app.Use(func(c *gpp.Context) error { c.Set("user", claims); return c.Next() })
+	app.Use(func(c *gpp.Context) error {
+		if err := installVerifiedIdentity(c, *claims); err != nil {
+			return err
+		}
+		return c.Next()
+	})
 	app.GET("/admin", RequireRoles("admin"), RequirePolicy(func(user *UserClaims) bool {
 		return user.Attributes["department"] == "finance"
 	}), func(c *gpp.Context) error { return c.NoContent() })

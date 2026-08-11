@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -23,10 +24,61 @@ const (
 	maxEncodedTokenBytes = 16 << 10
 )
 
+// ErrTokenFormatNotRecognized is the only error that permits verification to
+// continue to the next explicitly configured compatibility verifier.
+var ErrTokenFormatNotRecognized = errors.New("auth: token format not recognized")
+
+// TokenVerifier verifies one bounded token format and returns trusted claims.
+// Implementations must return ErrTokenFormatNotRecognized only when the token
+// is unambiguously not their format; recognized invalid tokens must return a
+// different error so the chain fails closed.
+type TokenVerifier interface {
+	VerifyToken(context.Context, string) (UserClaims, error)
+}
+
+// TokenCompatibility configures one temporary application-private verifier.
+// AcceptUntil and MaxTokenBytes are mandatory so compatibility is bounded.
+type TokenCompatibility struct {
+	Verifier      TokenVerifier
+	AcceptUntil   time.Time
+	MaxTokenBytes int
+}
+
+// LegacyTokenConfig enables verification of GoPlusPlus's signed pre-v1.11
+// two-part HMAC token. It never enables token generation.
+type LegacyTokenConfig struct {
+	SigningKey    []byte
+	AcceptUntil   time.Time
+	MaxTTL        time.Duration
+	MaxTokenBytes int
+}
+
+type tokenCompatibility struct {
+	verifier      TokenVerifier
+	acceptUntil   time.Time
+	maxTokenBytes int
+}
+
 // TokenClaims contains verified JWT claims.
 type TokenClaims struct {
+	Subject      string            `json:"sub"`
+	UserID       int64             `json:"-"`
+	UserIDString string            `json:"-"`
+	Email        string            `json:"email,omitempty"`
+	Roles        []string          `json:"roles,omitempty"`
+	Attributes   map[string]string `json:"attributes,omitempty"`
+	TenantID     string            `json:"tenant_id,omitempty"`
+	Issuer       string            `json:"iss"`
+	Audience     string            `json:"aud"`
+	ExpiresAt    int64             `json:"exp"`
+	NotBefore    int64             `json:"nbf"`
+	IssuedAt     int64             `json:"iat"`
+	JWTID        string            `json:"jti"`
+}
+
+type tokenClaimsWire struct {
 	Subject    string            `json:"sub"`
-	UserID     int64             `json:"user_id"`
+	UserID     json.RawMessage   `json:"user_id,omitempty"`
 	Email      string            `json:"email,omitempty"`
 	Roles      []string          `json:"roles,omitempty"`
 	Attributes map[string]string `json:"attributes,omitempty"`
@@ -39,32 +91,126 @@ type TokenClaims struct {
 	JWTID      string            `json:"jti"`
 }
 
+func (claims TokenClaims) MarshalJSON() ([]byte, error) {
+	var userID json.RawMessage
+	if claims.UserIDString != "" {
+		encoded, err := json.Marshal(claims.UserIDString)
+		if err != nil {
+			return nil, err
+		}
+		userID = encoded
+	} else if claims.UserID != 0 {
+		userID = json.RawMessage(strconv.FormatInt(claims.UserID, 10))
+	}
+	return json.Marshal(tokenClaimsWire{
+		Subject: claims.Subject, UserID: userID, Email: claims.Email, Roles: claims.Roles,
+		Attributes: claims.Attributes, TenantID: claims.TenantID, Issuer: claims.Issuer, Audience: claims.Audience,
+		ExpiresAt: claims.ExpiresAt, NotBefore: claims.NotBefore, IssuedAt: claims.IssuedAt, JWTID: claims.JWTID,
+	})
+}
+
+func (claims *TokenClaims) UnmarshalJSON(data []byte) error {
+	var wire tokenClaimsWire
+	if err := strictJSON(data, &wire); err != nil {
+		return err
+	}
+	*claims = TokenClaims{
+		Subject: wire.Subject, Email: wire.Email, Roles: wire.Roles, Attributes: wire.Attributes, TenantID: wire.TenantID,
+		Issuer: wire.Issuer, Audience: wire.Audience, ExpiresAt: wire.ExpiresAt,
+		NotBefore: wire.NotBefore, IssuedAt: wire.IssuedAt, JWTID: wire.JWTID,
+	}
+	if len(wire.UserID) == 0 || string(wire.UserID) == "null" {
+		return nil
+	}
+	if wire.UserID[0] == '"' {
+		return json.Unmarshal(wire.UserID, &claims.UserIDString)
+	}
+	return json.Unmarshal(wire.UserID, &claims.UserID)
+}
+
 type tokenHeader struct {
 	Algorithm string `json:"alg"`
 	Type      string `json:"typ"`
 	KeyID     string `json:"kid"`
 }
 
+type legacyV1TokenClaims struct {
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email,omitempty"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+type legacyV1TokenVerifier struct {
+	key    []byte
+	maxTTL time.Duration
+	now    func() time.Time
+}
+
+func newLegacyV1TokenVerifier(config LegacyTokenConfig, now func() time.Time) (*legacyV1TokenVerifier, error) {
+	if len(config.SigningKey) < 32 || config.AcceptUntil.IsZero() || config.MaxTTL < time.Second ||
+		config.MaxTTL > 30*24*time.Hour || config.MaxTokenBytes < 1 || config.MaxTokenBytes > maxEncodedTokenBytes {
+		return nil, errors.New("auth: legacy token compatibility configuration is outside safe bounds")
+	}
+	return &legacyV1TokenVerifier{key: append([]byte(nil), config.SigningKey...), maxTTL: config.MaxTTL, now: now}, nil
+}
+
+func (verifier *legacyV1TokenVerifier) VerifyToken(ctx context.Context, token string) (UserClaims, error) {
+	if err := ctx.Err(); err != nil {
+		return UserClaims{}, err
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return UserClaims{}, ErrTokenFormatNotRecognized
+	}
+	signature, err := base64.RawURLEncoding.Strict().DecodeString(parts[1])
+	if err != nil || len(signature) != sha256.Size {
+		return UserClaims{}, errors.New("auth: invalid legacy token")
+	}
+	mac := hmac.New(sha256.New, verifier.key)
+	_, _ = mac.Write([]byte(parts[0]))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return UserClaims{}, errors.New("auth: invalid legacy token")
+	}
+	payload, err := base64.RawURLEncoding.Strict().DecodeString(parts[0])
+	if err != nil {
+		return UserClaims{}, errors.New("auth: invalid legacy token")
+	}
+	var claims legacyV1TokenClaims
+	if err := strictJSON(payload, &claims); err != nil || claims.UserID <= 0 || claims.ExpiresAt <= 0 {
+		return UserClaims{}, errors.New("auth: invalid legacy token")
+	}
+	now := verifier.now().UTC()
+	expiresAt := time.Unix(claims.ExpiresAt, 0)
+	if !now.Before(expiresAt) || expiresAt.After(now.Add(verifier.maxTTL)) {
+		return UserClaims{}, errors.New("auth: invalid legacy token")
+	}
+	identity := UserClaims{ID: strconv.FormatInt(claims.UserID, 10), Subject: strconv.FormatInt(claims.UserID, 10), Email: claims.Email}
+	return identity, nil
+}
+
 // TokenConfig defines immutable JWT verification and key-rotation policy.
 type TokenConfig struct {
-	Issuer      string
-	Audience    string
-	ActiveKeyID string
-	Keys        map[string][]byte
-	MaxTTL      time.Duration
-	ClockSkew   time.Duration
-	Now         func() time.Time
+	Issuer        string
+	Audience      string
+	ActiveKeyID   string
+	Keys          map[string][]byte
+	MaxTTL        time.Duration
+	ClockSkew     time.Duration
+	Now           func() time.Time
+	LegacyV1      *LegacyTokenConfig
+	Compatibility []TokenCompatibility
 }
 
 // TokenManager issues and verifies HS256 JWTs using explicit key IDs.
 type TokenManager struct {
-	issuer      string
-	audience    string
-	activeKeyID string
-	keys        map[string][]byte
-	maxTTL      time.Duration
-	clockSkew   time.Duration
-	now         func() time.Time
+	issuer        string
+	audience      string
+	activeKeyID   string
+	keys          map[string][]byte
+	maxTTL        time.Duration
+	clockSkew     time.Duration
+	now           func() time.Time
+	compatibility []tokenCompatibility
 }
 
 func NewTokenManager(config TokenConfig) (*TokenManager, error) {
@@ -87,10 +233,36 @@ func NewTokenManager(config TokenConfig) (*TokenManager, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
+	compatibility, err := buildTokenCompatibility(config, config.Now)
+	if err != nil {
+		return nil, err
+	}
 	return &TokenManager{
 		issuer: config.Issuer, audience: config.Audience, activeKeyID: config.ActiveKeyID,
-		keys: keys, maxTTL: config.MaxTTL, clockSkew: config.ClockSkew, now: config.Now,
+		keys: keys, maxTTL: config.MaxTTL, clockSkew: config.ClockSkew, now: config.Now, compatibility: compatibility,
 	}, nil
+}
+
+func buildTokenCompatibility(config TokenConfig, now func() time.Time) ([]tokenCompatibility, error) {
+	entries := make([]tokenCompatibility, 0, len(config.Compatibility)+1)
+	if config.LegacyV1 != nil {
+		legacy, err := newLegacyV1TokenVerifier(*config.LegacyV1, now)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, tokenCompatibility{
+			verifier: legacy, acceptUntil: config.LegacyV1.AcceptUntil.UTC(), maxTokenBytes: config.LegacyV1.MaxTokenBytes,
+		})
+	}
+	for _, entry := range config.Compatibility {
+		if entry.Verifier == nil || entry.AcceptUntil.IsZero() || entry.MaxTokenBytes < 1 || entry.MaxTokenBytes > maxEncodedTokenBytes {
+			return nil, errors.New("auth: token compatibility requires a verifier, deadline, and bounded token size")
+		}
+		entries = append(entries, tokenCompatibility{
+			verifier: entry.Verifier, acceptUntil: entry.AcceptUntil.UTC(), maxTokenBytes: entry.MaxTokenBytes,
+		})
+	}
+	return entries, nil
 }
 
 // Issue creates a signed JWT for a positive numeric user ID and explicit bounded TTL.
@@ -100,7 +272,7 @@ func (manager *TokenManager) Issue(userID int64, email string, ttl time.Duration
 
 // IssueUser creates a signed JWT containing trusted authorization claims.
 func (manager *TokenManager) IssueUser(user UserClaims, ttl time.Duration) (string, error) {
-	userID, err := parsePositiveUserID(user.ID)
+	verified, userID, numeric, err := canonicalUserClaims(user)
 	if err != nil || ttl < time.Second || ttl > manager.maxTTL {
 		return "", errors.New("auth: user ID and explicit token TTL must be valid")
 	}
@@ -110,22 +282,42 @@ func (manager *TokenManager) IssueUser(user UserClaims, ttl time.Duration) (stri
 		return "", err
 	}
 	claims := TokenClaims{
-		Subject: strconv.FormatInt(userID, 10), UserID: userID, Email: user.Email,
-		Roles: append([]string(nil), user.Roles...), Attributes: cloneStringMap(user.Attributes), TenantID: user.TenantID,
+		Subject: verified.Subject, UserID: userID, Email: verified.Email,
+		Roles: append([]string(nil), verified.Roles...), Attributes: cloneStringMap(verified.Attributes), TenantID: verified.TenantID,
 		Issuer: manager.issuer, Audience: manager.audience, IssuedAt: now.Unix(), NotBefore: now.Unix(),
 		ExpiresAt: now.Add(ttl).Unix(), JWTID: jti,
+	}
+	if !numeric {
+		claims.UserIDString = verified.ID
 	}
 	return manager.sign(claims)
 }
 
 // Verify authenticates a JWT signature and all required registered claims.
 func (manager *TokenManager) Verify(token string) (*TokenClaims, error) {
+	claims, err := manager.verifyJWT(context.Background(), token)
+	if errors.Is(err, ErrTokenFormatNotRecognized) {
+		return nil, errors.New("auth: invalid token")
+	}
+	return claims, err
+}
+
+func (manager *TokenManager) verifyJWT(ctx context.Context, token string) (*TokenClaims, error) {
+	if manager == nil {
+		return nil, errors.New("auth: invalid token manager")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(token) == 0 || len(token) > maxEncodedTokenBytes {
 		return nil, errors.New("auth: invalid token")
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return nil, errors.New("auth: invalid token")
+		if len(parts) > 0 && recognizedJWTHeader(parts[0]) {
+			return nil, errors.New("auth: invalid token")
+		}
+		return nil, ErrTokenFormatNotRecognized
 	}
 	headerBytes, err := base64.RawURLEncoding.Strict().DecodeString(parts[0])
 	if err != nil {
@@ -148,6 +340,9 @@ func (manager *TokenManager) Verify(token string) (*TokenClaims, error) {
 	if !hmac.Equal(signature, mac.Sum(nil)) {
 		return nil, errors.New("auth: invalid token signature")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	payload, err := base64.RawURLEncoding.Strict().DecodeString(parts[1])
 	if err != nil {
 		return nil, errors.New("auth: invalid token claims")
@@ -157,6 +352,60 @@ func (manager *TokenManager) Verify(token string) (*TokenClaims, error) {
 		return nil, errors.New("auth: invalid token claims")
 	}
 	return &claims, nil
+}
+
+func recognizedJWTHeader(encoded string) bool {
+	headerBytes, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+	if err != nil {
+		return false
+	}
+	var header tokenHeader
+	if strictJSON(headerBytes, &header) != nil {
+		return false
+	}
+	return header.Type == "JWT" || header.Algorithm != "" || header.KeyID != ""
+}
+
+// VerifyToken implements TokenVerifier for current GoPlusPlus JWTs.
+func (manager *TokenManager) VerifyToken(ctx context.Context, token string) (UserClaims, error) {
+	claims, err := manager.verifyJWT(ctx, token)
+	if err != nil {
+		return UserClaims{}, err
+	}
+	return *claims.userClaims(), nil
+}
+
+func (manager *TokenManager) verifyCompatible(ctx context.Context, token string) (UserClaims, error) {
+	claims, err := manager.VerifyToken(ctx, token)
+	if err == nil {
+		return claims, nil
+	}
+	if !errors.Is(err, ErrTokenFormatNotRecognized) {
+		return UserClaims{}, err
+	}
+	for _, entry := range manager.compatibility {
+		if err := ctx.Err(); err != nil {
+			return UserClaims{}, err
+		}
+		if !manager.now().UTC().Before(entry.acceptUntil) {
+			continue
+		}
+		if len(token) > entry.maxTokenBytes {
+			return UserClaims{}, errors.New("auth: compatibility token is too large")
+		}
+		claims, err = entry.verifier.VerifyToken(ctx, token)
+		if err == nil {
+			verified, _, _, identityErr := canonicalUserClaims(claims)
+			if identityErr != nil {
+				return UserClaims{}, errors.New("auth: compatibility verifier returned invalid identity")
+			}
+			return verified, nil
+		}
+		if !errors.Is(err, ErrTokenFormatNotRecognized) {
+			return UserClaims{}, errors.New("auth: compatibility token verification failed")
+		}
+	}
+	return UserClaims{}, errors.New("auth: invalid token")
 }
 
 func (manager *TokenManager) sign(claims TokenClaims) (string, error) {
@@ -178,7 +427,10 @@ func (manager *TokenManager) sign(claims TokenClaims) (string, error) {
 
 func (manager *TokenManager) validateClaims(claims TokenClaims) error {
 	now := manager.now().UTC()
-	if claims.UserID <= 0 || claims.Subject != strconv.FormatInt(claims.UserID, 10) || claims.JWTID == "" ||
+	subject, subjectID, numeric, identityErr := canonicalIdentityID(claims.Subject)
+	if identityErr != nil || subject != claims.Subject || claims.UserID < 0 ||
+		(numeric && (claims.UserID != subjectID || claims.UserIDString != "")) ||
+		(!numeric && (claims.UserID != 0 || claims.UserIDString != subject)) || claims.JWTID == "" ||
 		claims.Issuer != manager.issuer || claims.Audience != manager.audience ||
 		claims.ExpiresAt <= 0 || claims.NotBefore <= 0 || claims.IssuedAt <= 0 {
 		return errors.New("invalid required claims")
@@ -261,7 +513,7 @@ func RequirePASETO(string) gpp.HandlerFunc {
 func Authenticate(secret string) gpp.HandlerFunc {
 	manager, err := defaultTokenManager(secret)
 	if err != nil {
-		return func(*gpp.Context) error { return gpp.ErrUnauthorized("Invalid authentication configuration") }
+		return func(*gpp.Context) error { return gpp.ErrUnauthorized("Invalid or expired bearer token") }
 	}
 	return AuthenticateWithManager(manager)
 }
@@ -269,15 +521,18 @@ func Authenticate(secret string) gpp.HandlerFunc {
 // AuthenticateWithManager installs identity only after complete token verification.
 func AuthenticateWithManager(manager *TokenManager) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
-		token, ok := bearerToken(c.GetHeader("Authorization"))
+		clearVerifiedIdentity(c)
+		token, ok := bearerToken(c)
 		if !ok || manager == nil {
 			return gpp.ErrUnauthorized("Missing or invalid bearer token")
 		}
-		claims, err := manager.Verify(token)
+		claims, err := manager.verifyCompatible(c.Request.Context(), token)
 		if err != nil {
 			return gpp.ErrUnauthorized("Invalid or expired bearer token")
 		}
-		c.Set("user", claims.userClaims())
+		if err := installVerifiedIdentity(c, claims); err != nil {
+			return gpp.ErrUnauthorized("Invalid or expired bearer token")
+		}
 		return c.Next()
 	}
 }
@@ -290,38 +545,53 @@ func UniversalAuth(secret string, sessions *RedisSessionManager) gpp.HandlerFunc
 // UniversalAuthWithManager accepts a verified session or JWT using explicit token policy.
 func UniversalAuthWithManager(manager *TokenManager, sessions *RedisSessionManager) gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
+		clearVerifiedIdentity(c)
 		if sessions != nil {
 			if claims, ok := sessions.claimsForRequest(c); ok {
-				c.Set("user", claims)
-				return c.Next()
+				if installVerifiedIdentity(c, *claims) == nil {
+					return c.Next()
+				}
 			}
 		}
-		token, ok := bearerToken(c.GetHeader("Authorization"))
+		token, ok := bearerToken(c)
 		if !ok || manager == nil {
 			return gpp.ErrUnauthorized("Valid session or bearer token required")
 		}
-		claims, err := manager.Verify(token)
+		claims, err := manager.verifyCompatible(c.Request.Context(), token)
 		if err != nil {
 			return gpp.ErrUnauthorized("Valid session or bearer token required")
 		}
-		c.Set("user", claims.userClaims())
+		if err := installVerifiedIdentity(c, claims); err != nil {
+			return gpp.ErrUnauthorized("Valid session or bearer token required")
+		}
 		return c.Next()
 	}
 }
 
 func (claims *TokenClaims) userClaims() *UserClaims {
 	return &UserClaims{
-		ID: strconv.FormatInt(claims.UserID, 10), Email: claims.Email,
+		ID: claims.Subject, Subject: claims.Subject, Email: claims.Email,
 		Roles: append([]string(nil), claims.Roles...), Attributes: cloneStringMap(claims.Attributes), TenantID: claims.TenantID,
 	}
 }
 
-func bearerToken(header string) (string, bool) {
-	if !strings.HasPrefix(header, "Bearer ") || strings.Count(header, " ") != 1 {
+func bearerToken(c *gpp.Context) (string, bool) {
+	if c == nil || c.Request == nil {
 		return "", false
 	}
-	token := strings.TrimPrefix(header, "Bearer ")
-	return token, token != ""
+	values := c.Request.Header.Values("Authorization")
+	if len(values) != 1 {
+		return "", false
+	}
+	header := values[0]
+	if len(header) <= len("Bearer ") || len(header) > len("Bearer ")+maxEncodedTokenBytes || !strings.HasPrefix(header, "Bearer ") {
+		return "", false
+	}
+	token := header[len("Bearer "):]
+	if strings.IndexAny(token, " \t\r\n") >= 0 {
+		return "", false
+	}
+	return token, true
 }
 
 func parsePositiveUserID(value string) (int64, error) {

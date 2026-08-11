@@ -386,11 +386,12 @@ cms.Add("trending_topic", 1)
 `goplusplus` includes multi-platform security for Web and Mobile applications:
 
 ```go
-// 1. Password storage (Argon2id PHC hash with random per-password salt)
-passwordHash, err := auth.HashPasswordWithConfig(
-    password, passwordPepper, auth.DefaultPasswordConfig(),
-)
+// 1. Immutable password policy (Argon2id, timing guard, migration decisions)
+passwords, err := auth.NewPasswordPolicy(auth.PasswordPolicyConfig{
+    Pepper: passwordPepper, Argon2id: auth.DefaultPasswordConfig(),
+})
 if err != nil { return err }
+passwordHash, err := passwords.Hash(password)
 
 // 2. JWT policy with explicit issuer, audience, key ID, rotation set, and TTL
 tokens, err := auth.NewTokenManager(auth.TokenConfig{
@@ -399,6 +400,7 @@ tokens, err := auth.NewTokenManager(auth.TokenConfig{
     ActiveKeyID: "2026-08",
     Keys: map[string][]byte{"2026-08": signingKey}, // at least 32 random bytes
     MaxTTL: 24 * time.Hour,
+    ClockSkew: time.Minute,
 })
 if err != nil { return err }
 jwtToken, err := tokens.IssueUser(userClaims, 15*time.Minute)
@@ -413,7 +415,9 @@ if sessionMgr.CreateSession(c, userClaims) == "" { return errors.New("session cr
 app.Use(auth.UniversalAuthWithManager(tokens, sessionMgr))
 ```
 
-The former placeholder PASETO API is disabled and fails closed. `GenerateToken` and `GenerateJWT` now require exactly one explicit positive TTL. Use `VerifyLegacyPassword` or `VerifyPasswordWithMigration` only while migrating pre-v1.11 HMAC password records.
+Bearer and session middleware now install one verified identity for `auth.GetUser`, roles, policies, `RequireUserSubject` (UUID/string IDs), and `RequireUserID` (positive numeric IDs). Bearer syntax is exactly one case-sensitive `Authorization: Bearer <token>` header.
+
+Use explicit deadlines for every legacy adapter. The signed pre-v1.11 two-part token and HMAC password hash are the only built-in historical formats. Unsigned placeholder JWT/PASETO strings remain rejected. See the [production authentication guide](docs/authentication.md), [v1.11.1 authentication migration](MIGRATION_v1.11.1_AUTH.md), and [SQL-backed application example](examples/authentication/application.go).
 
 ---
 
@@ -768,6 +772,24 @@ app.GET("/api/v1/feed", func(c *gpp.Context) error {
     return c.PaginateCursor(200, result.Items, result.NextCursor, result.HasMore, result.Limit)
 })
 ```
+
+---
+
+## Production database and request infrastructure (v1.12)
+
+SQLite and PostgreSQL now use real `database/sql` connections. Open SQLite with
+`dbcore.OpenSQLite(ctx, dbcore.SQLiteConfig{...})`; open PostgreSQL primary and
+optional replica pools with `dbcore.NewPostgresClient(ctx, dbcore.Config{...})`.
+Neither adapter silently falls back to an in-memory database. Migration history
+is transactional and checksum-verified, and common SQLite/PostgreSQL constraint
+failures have stable `dbcore.ErrorKind` classifications.
+
+The release also adds causal `gpp.NewInternalError`, the explicit
+`BindNormalizeAndValidate` request pipeline, strict typed parameters,
+`PaginationPolicy`, isolated `config.Loader`, redacted bounded readiness checks,
+typed `gpptest` response helpers, and an application-credential-neutral
+TypeScript HTTP transport. See [MIGRATION_v1.12.md](MIGRATION_v1.12.md) for
+adoption examples and compatibility details.
 
 ---
 

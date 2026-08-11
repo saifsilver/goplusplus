@@ -82,7 +82,7 @@ func TestDBClientFullSuite(t *testing.T) {
 	}
 
 	// 7. SQLiteClient
-	sqClient, err := dbcore.NewSQLiteClient("test.db")
+	sqClient, err := dbcore.NewSQLiteClient(t.TempDir() + "/test.db")
 	if err != nil || sqClient == nil {
 		t.Fatalf("NewSQLiteClient failed: %v", err)
 	}

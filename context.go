@@ -1,6 +1,7 @@
 package gpp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -34,6 +36,8 @@ type Context struct {
 	keys     map[string]any
 	mu       sync.RWMutex
 	aborted  bool
+	written  bool
+	response *responseTracker
 
 	// engine back-reference
 	engine *Engine
@@ -47,17 +51,52 @@ func newContext() *Context {
 }
 
 func (c *Context) reset(w http.ResponseWriter, req *http.Request) {
-	c.Writer = w
+	tracker := &responseTracker{ResponseWriter: w}
+	c.Writer = tracker
+	c.response = tracker
 	c.Request = req
 	c.Params = c.Params[:0]
 	c.index = -1
 	c.aborted = false
+	c.written = false
 
 	// Clear keys map without reallocation
 	for k := range c.keys {
 		delete(c.keys, k)
 	}
 }
+
+type responseTracker struct {
+	http.ResponseWriter
+	written bool
+}
+
+func (writer *responseTracker) WriteHeader(status int) {
+	writer.written = true
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *responseTracker) Write(data []byte) (int, error) {
+	writer.written = true
+	return writer.ResponseWriter.Write(data)
+}
+
+func (writer *responseTracker) Flush() {
+	_ = http.NewResponseController(writer.ResponseWriter).Flush()
+}
+
+func (writer *responseTracker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(writer.ResponseWriter).Hijack()
+}
+
+func (writer *responseTracker) Push(target string, options *http.PushOptions) error {
+	if pusher, ok := writer.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, options)
+	}
+	return http.ErrNotSupported
+}
+
+func (writer *responseTracker) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
 
 // Next executes the remaining handlers in the chain.
 func (c *Context) Next() error {
@@ -147,19 +186,37 @@ func (c *Context) ParamInt(key string, defaultValue ...int) int {
 
 // UserID extracts the active authenticated user ID (int64) from request context storage ("user_id" or "sub").
 func (c *Context) UserID() int64 {
-	if id := c.GetInt64("user_id"); id != 0 {
+	if id := c.GetInt64("user_id"); id > 0 {
 		return id
 	}
-	return c.GetInt64("sub")
+	if id := c.GetInt64("sub"); id > 0 {
+		return id
+	}
+	return 0
 }
 
 // RequireUserID returns the active authenticated user ID, or returns a 401 Unauthorized error if unauthenticated.
 func (c *Context) RequireUserID() (int64, error) {
 	id := c.UserID()
-	if id == 0 {
+	if id <= 0 {
 		return 0, ErrUnauthorized("Authentication required")
 	}
 	return id, nil
+}
+
+// UserSubject returns the canonical authenticated string identity. Unlike
+// UserID, it supports UUIDs and other bounded opaque identifiers.
+func (c *Context) UserSubject() string {
+	return c.GetString("sub")
+}
+
+// RequireUserSubject returns the canonical string identity or a 401 error.
+func (c *Context) RequireUserSubject() (string, error) {
+	subject := c.UserSubject()
+	if subject == "" {
+		return "", ErrUnauthorized("Authentication required")
+	}
+	return subject, nil
 }
 
 // OK writes an HTTP 200 OK JSON response.
@@ -274,6 +331,13 @@ func (c *Context) Set(key string, value any) {
 		c.keys = make(map[string]any)
 	}
 	c.keys[key] = value
+	c.mu.Unlock()
+}
+
+// Delete removes a key from request context storage.
+func (c *Context) Delete(key string) {
+	c.mu.Lock()
+	delete(c.keys, key)
 	c.mu.Unlock()
 }
 
@@ -458,6 +522,7 @@ func (c *Context) GetHeader(key string) string {
 
 // Status sets the HTTP response status code.
 func (c *Context) Status(code int) {
+	c.written = true
 	c.Writer.WriteHeader(code)
 }
 
@@ -476,6 +541,29 @@ func (c *Context) Validate(v any) error {
 func (c *Context) BindAndValidate(v any) error {
 	if err := c.BindJSON(v); err != nil {
 		return err
+	}
+	return c.Validate(v)
+}
+
+// NormalizeFunc applies application-owned normalization after binding and
+// before validation. A nil callback is a documented no-op.
+type NormalizeFunc func(context.Context) error
+
+// BindNormalizeAndValidate executes the explicit request processing pipeline.
+func (c *Context) BindNormalizeAndValidate(v any, normalize NormalizeFunc) error {
+	if !isValidBindingTarget(v) {
+		return bindingProblem(http.StatusBadRequest, "invalid-target", "Invalid request target")
+	}
+	if err := c.BindJSON(v); err != nil {
+		return err
+	}
+	if normalize != nil {
+		if err := normalize(c.Request.Context()); err != nil {
+			if c.Request.Context().Err() != nil {
+				return c.Request.Context().Err()
+			}
+			return ErrBadRequest("Request normalization failed")
+		}
 	}
 	return c.Validate(v)
 }
@@ -596,6 +684,13 @@ func (c *Context) JSON(statusCode int, data any) error {
 	return json.NewEncoder(c.Writer).Encode(data)
 }
 
+// Problem writes an RFC 7807/9457 Problem Details response.
+func (c *Context) Problem(problem ProblemDetails) error {
+	c.SetHeader("Content-Type", "application/problem+json; charset=utf-8")
+	c.Status(problem.Status)
+	return json.NewEncoder(c.Writer).Encode(problem)
+}
+
 // String formats and writes a plain text string response.
 func (c *Context) String(statusCode int, format string, values ...any) error {
 	c.SetHeader("Content-Type", "text/plain; charset=utf-8")
@@ -683,9 +778,9 @@ func (c *Context) GetCursorAndLimit(defaultLimit ...int) (string, int) {
 
 // Paginate writes a standardized offset-based paginated JSON response.
 func (c *Context) Paginate(statusCode int, items any, page, limit, total int) error {
-	totalPages := 0
-	if limit > 0 {
-		totalPages = int(math.Ceil(float64(total) / float64(limit)))
+	totalPages, err := TotalPages(total, limit)
+	if err != nil {
+		return err
 	}
 	return c.JSON(statusCode, H{
 		"data": items,

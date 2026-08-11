@@ -51,6 +51,9 @@ func Logger() gpp.HandlerFunc {
 			slog.String("ip", clientIP),
 		}
 
+		if err != nil && gpp.IsInternalFailure(err) {
+			return err
+		}
 		if err != nil {
 			logAttrs = append(logAttrs, slog.String("error", err.Error()))
 			slog.Error("HTTP Request Error", logAttrs...)
