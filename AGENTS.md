@@ -159,6 +159,9 @@ adminGroup.Use(
 | **DB Seeder & Faker** | `seed.Run(ctx, db, seed.Plan{Table: "users", Count: 50, Factory: ...})` |
 | **Offset Pagination** | `c.Paginate(200, items, page, limit, total)` |
 | **Cursor Pagination** | `c.PaginateCursor(200, items, nextCursor, hasMore, limit)` |
+| **Ephemeral Session Pagination** | `dbcore.MaterializePagination(ctx, db, query, 10*time.Minute)` |
+| **Bounded Memory Cache** | `cache.NewBoundedMemoryStore(10000)` (bounded space capacity) |
+| **Auto SQL Query Cache** | `ctx := dbcore.WithCache(c.Request.Context(), 30*time.Second)` |
 | **404 Error** | `return gpp.ErrNotFound("Item not found")` |
 | **400 Error** | `return gpp.ErrBadRequest("Invalid field")` |
 | **401 Error** | `return gpp.ErrUnauthorized("Token expired")` |

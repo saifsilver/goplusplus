@@ -20,6 +20,19 @@ type Client struct {
 	cfg SlowQueryConfig
 }
 
+type queryCacheKey struct{}
+
+// WithCache decorates a context with an automatic query caching TTL.
+func WithCache(ctx context.Context, ttl time.Duration) context.Context {
+	return context.WithValue(ctx, queryCacheKey{}, ttl)
+}
+
+// GetCacheTTL extracts query cache TTL from context if set.
+func GetCacheTTL(ctx context.Context) (time.Duration, bool) {
+	ttl, ok := ctx.Value(queryCacheKey{}).(time.Duration)
+	return ttl, ok
+}
+
 // NewClient initializes a new dbcore Client instance.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if cfg.SlowQuery.Threshold <= 0 {
