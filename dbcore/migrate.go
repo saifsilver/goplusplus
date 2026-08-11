@@ -40,7 +40,7 @@ func AutoMigrate(ctx context.Context, client *Client, migrations ...Migration) e
 		applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
 
-	if err := client.Exec(ctx, createTableSQL); err != nil {
+	if _, err := client.Exec(ctx, createTableSQL); err != nil {
 		return fmt.Errorf("dbcore/migrate: failed to initialize gpp_migrations table: %w", err)
 	}
 

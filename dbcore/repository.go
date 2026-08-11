@@ -86,7 +86,8 @@ func (r *Repository[T]) Create(ctx context.Context, entity *T) error {
 		strings.Join(placeholders, ", "),
 	)
 
-	return r.client.Exec(ctx, query, args...)
+	_, err := r.client.Exec(ctx, query, args...)
+	return err
 }
 
 // Update updates an existing record matching ID.
@@ -109,13 +110,15 @@ func (r *Repository[T]) Update(ctx context.Context, id any, entity *T) error {
 		len(args),
 	)
 
-	return r.client.Exec(ctx, query, args...)
+	_, err := r.client.Exec(ctx, query, args...)
+	return err
 }
 
 // Delete removes a record by primary key ID.
 func (r *Repository[T]) Delete(ctx context.Context, id any) error {
 	query := fmt.Sprintf("DELETE FROM %s WHERE id = $1", r.tableName)
-	return r.client.Exec(ctx, query, id)
+	_, err := r.client.Exec(ctx, query, id)
+	return err
 }
 
 // Paginate retrieves a paginated window of records along with total count.

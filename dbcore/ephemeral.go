@@ -43,7 +43,7 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 		data_json TEXT NOT NULL
 	);`, tableName)
 
-	if err := client.Exec(ctx, createTableSQL); err != nil {
+	if _, err := client.Exec(ctx, createTableSQL); err != nil {
 		return nil, fmt.Errorf("dbcore/ephemeral: failed to create temporary result table: %w", err)
 	}
 
@@ -63,7 +63,7 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 		time.Sleep(delay)
 		cleanCtx := context.Background()
 		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", tName)
-		_ = client.Exec(cleanCtx, dropSQL)
+		_, _ = client.Exec(cleanCtx, dropSQL)
 
 		globalEphemeral.mu.Lock()
 		delete(globalEphemeral.sessions, sID)

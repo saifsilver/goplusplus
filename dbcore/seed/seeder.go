@@ -28,7 +28,7 @@ func Run(ctx context.Context, client *dbcore.Client, plans ...Plan) error {
 
 		if plan.TruncateFirst {
 			truncateSQL := fmt.Sprintf("DELETE FROM %s", plan.Table)
-			if err := client.Exec(ctx, truncateSQL); err != nil {
+			if _, err := client.Exec(ctx, truncateSQL); err != nil {
 				slog.Warn("dbcore/seed: Failed to truncate table", slog.String("table", plan.Table), slog.String("error", err.Error()))
 			}
 		}
@@ -58,7 +58,7 @@ func Run(ctx context.Context, client *dbcore.Client, plans ...Plan) error {
 				strings.Join(placeholders, ", "),
 			)
 
-			if err := client.Exec(ctx, insertSQL, args...); err != nil {
+			if _, err := client.Exec(ctx, insertSQL, args...); err != nil {
 				return fmt.Errorf("dbcore/seed: Error inserting row %d into table '%s': %w", i+1, plan.Table, err)
 			}
 		}

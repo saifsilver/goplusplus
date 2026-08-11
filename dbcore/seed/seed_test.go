@@ -36,7 +36,7 @@ func TestSeederRun(t *testing.T) {
 		t.Fatalf("failed creating memory db client: %v", err)
 	}
 
-	_ = client.Exec(ctx, `CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT);`)
+	_, _ = client.Exec(ctx, `CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT);`)
 
 	err = seed.Run(ctx, client, seed.Plan{
 		Table: "users",
