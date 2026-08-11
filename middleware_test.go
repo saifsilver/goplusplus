@@ -112,6 +112,32 @@ func TestRateLimitMiddleware(t *testing.T) {
 	}
 }
 
+func TestRateLimitUsesClientIPWithoutSourcePort(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.RateLimit(middleware.RateLimiterConfig{Rate: 0.0001, Capacity: 2}))
+	app.GET("/limited", func(c *gpp.Context) error {
+		return c.String(http.StatusOK, "ok")
+	})
+
+	for index, remoteAddr := range []string{
+		"192.168.1.10:1001",
+		"192.168.1.10:1002",
+		"192.168.1.10:1003",
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/limited", nil)
+		request.RemoteAddr = remoteAddr
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		want := http.StatusOK
+		if index == 2 {
+			want = http.StatusTooManyRequests
+		}
+		if response.Code != want {
+			t.Fatalf("request %d status = %d, want %d", index+1, response.Code, want)
+		}
+	}
+}
+
 func TestTimeoutMiddleware(t *testing.T) {
 	app := gpp.New()
 	app.Use(middleware.Timeout(50 * time.Millisecond))

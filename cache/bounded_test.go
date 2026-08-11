@@ -3,6 +3,8 @@ package cache_test
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,6 +52,68 @@ func TestBoundedMemoryStoreExpirationEviction(t *testing.T) {
 	}
 	if val, ok := store.Get(ctx, "k2"); !ok || val != "v2" {
 		t.Errorf("expected k2 to be preserved, got %v", val)
+	}
+}
+
+func TestBoundedMemoryStoreDeletePreservesCapacity(t *testing.T) {
+	ctx := context.Background()
+	store := cache.NewBoundedMemoryStore(2)
+
+	_ = store.Set(ctx, "k1", "v1", time.Minute)
+	_ = store.Set(ctx, "k2", "v2", time.Minute)
+	_ = store.Delete(ctx, "k1")
+	_ = store.Set(ctx, "k3", "v3", time.Minute)
+	_ = store.Set(ctx, "k4", "v4", time.Minute)
+
+	if _, ok := store.Get(ctx, "k2"); ok {
+		t.Fatal("expected oldest live entry k2 to be evicted")
+	}
+	for _, key := range []string{"k3", "k4"} {
+		if _, ok := store.Get(ctx, key); !ok {
+			t.Fatalf("expected %s to remain cached", key)
+		}
+	}
+}
+
+func TestCacheGetOrSetCoalescesConcurrentFetches(t *testing.T) {
+	tests := map[string]cache.Store{
+		"memory":  cache.NewMemoryStore(),
+		"bounded": cache.NewBoundedMemoryStore(10),
+	}
+	for name, store := range tests {
+		t.Run(name, func(t *testing.T) {
+			var fetches atomic.Int32
+			started := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			fetcher := func() (any, error) {
+				fetches.Add(1)
+				once.Do(func() { close(started) })
+				<-release
+				return "value", nil
+			}
+
+			const callers = 8
+			var wg sync.WaitGroup
+			wg.Add(callers)
+			for range callers {
+				go func() {
+					defer wg.Done()
+					value, err := store.GetOrSet(context.Background(), "shared", time.Minute, fetcher)
+					if err != nil || value != "value" {
+						t.Errorf("GetOrSet() = %v, %v", value, err)
+					}
+				}()
+			}
+			<-started
+			time.Sleep(10 * time.Millisecond)
+			close(release)
+			wg.Wait()
+
+			if got := fetches.Load(); got != 1 {
+				t.Fatalf("fetcher called %d times, want 1", got)
+			}
+		})
 	}
 }
 

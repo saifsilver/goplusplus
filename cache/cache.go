@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Store defines the universal caching contract for all in-memory and distributed cache providers.
@@ -26,6 +28,7 @@ type cacheItem struct {
 type MemoryStore struct {
 	mu    sync.RWMutex
 	store map[string]cacheItem
+	loads singleflight.Group
 }
 
 // NewMemoryStore initializes a local in-memory cache store.
@@ -63,12 +66,22 @@ func (s *MemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duratio
 	if val, ok := s.Get(ctx, key); ok {
 		return val, nil
 	}
-	val, err := fetcher()
-	if err != nil {
-		return nil, err
+	result := s.loads.DoChan(key, func() (any, error) {
+		if val, ok := s.Get(ctx, key); ok {
+			return val, nil
+		}
+		val, err := fetcher()
+		if err != nil {
+			return nil, err
+		}
+		return val, s.Set(ctx, key, val, ttl)
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case value := <-result:
+		return value.Val, value.Err
 	}
-	_ = s.Set(ctx, key, val, ttl)
-	return val, nil
 }
 
 func (s *MemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error {

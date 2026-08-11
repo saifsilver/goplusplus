@@ -3,6 +3,7 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -59,6 +60,151 @@ func TestIdempotencyMiddleware(t *testing.T) {
 	}
 	if w2.Header().Get("X-Cache") != "HIT-IDEMPOTENT" {
 		t.Errorf("expected X-Cache HIT-IDEMPOTENT header on replayed request")
+	}
+}
+
+func TestIdempotencyScopesKeysByRoute(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.Idempotency())
+
+	var payments atomic.Int32
+	var refunds atomic.Int32
+	app.POST("/pay", func(c *gpp.Context) error {
+		payments.Add(1)
+		return c.String(http.StatusOK, "paid")
+	})
+	app.POST("/refund", func(c *gpp.Context) error {
+		refunds.Add(1)
+		return c.String(http.StatusOK, "refunded")
+	})
+
+	for path, want := range map[string]string{"/pay": "paid", "/refund": "refunded"} {
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		request.Header.Set(middleware.IdempotencyHeader, "shared-key")
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Body.String() != want {
+			t.Fatalf("POST %s = %d %q, want 200 %q", path, response.Code, response.Body.String(), want)
+		}
+	}
+	if payments.Load() != 1 || refunds.Load() != 1 {
+		t.Fatalf("handler executions = pay:%d refund:%d, want 1 each", payments.Load(), refunds.Load())
+	}
+}
+
+func TestIdempotencyCoalescesConcurrentRequests(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.Idempotency())
+
+	var executions atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	app.POST("/pay", func(c *gpp.Context) error {
+		if executions.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		return c.String(http.StatusOK, "paid")
+	})
+
+	const callers = 8
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			request := httptest.NewRequest(http.MethodPost, "/pay", strings.NewReader("amount=10"))
+			request.Header.Set(middleware.IdempotencyHeader, "concurrent-key")
+			response := httptest.NewRecorder()
+			app.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || response.Body.String() != "paid" {
+				t.Errorf("response = %d %q", response.Code, response.Body.String())
+			}
+		}()
+	}
+	<-started
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	if got := executions.Load(); got != 1 {
+		t.Fatalf("handler executed %d times, want 1", got)
+	}
+}
+
+func TestIdempotencyCacheIsBounded(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.Idempotency(middleware.IdempotencyConfig{MaxEntries: 1}))
+
+	var executions atomic.Int32
+	app.POST("/pay", func(c *gpp.Context) error {
+		executions.Add(1)
+		return c.String(http.StatusOK, "paid")
+	})
+
+	for _, key := range []string{"first", "second", "first"} {
+		request := httptest.NewRequest(http.MethodPost, "/pay", nil)
+		request.Header.Set(middleware.IdempotencyHeader, key)
+		app.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	if got := executions.Load(); got != 3 {
+		t.Fatalf("handler executed %d times, want 3 after oldest entry eviction", got)
+	}
+}
+
+func TestIdempotencyRejectsKeyReuseWithDifferentRequest(t *testing.T) {
+	app := gpp.New()
+	app.Use(middleware.Idempotency())
+
+	var executions atomic.Int32
+	app.POST("/pay", func(c *gpp.Context) error {
+		executions.Add(1)
+		return c.String(http.StatusOK, "paid")
+	})
+
+	for index, body := range []string{"amount=10", "amount=20"} {
+		request := httptest.NewRequest(http.MethodPost, "/pay", strings.NewReader(body))
+		request.Header.Set(middleware.IdempotencyHeader, "reused-key")
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		want := http.StatusOK
+		if index == 1 {
+			want = http.StatusConflict
+		}
+		if response.Code != want {
+			t.Fatalf("request %d status = %d, want %d", index+1, response.Code, want)
+		}
+	}
+	if got := executions.Load(); got != 1 {
+		t.Fatalf("handler executed %d times, want 1", got)
+	}
+}
+
+func TestIdempotencyScopesKeysByPrincipal(t *testing.T) {
+	app := gpp.New()
+	app.Use(func(c *gpp.Context) error {
+		c.Set("sub", c.GetHeader("X-Test-Subject"))
+		return c.Next()
+	}, middleware.Idempotency())
+
+	var executions atomic.Int32
+	app.POST("/pay", func(c *gpp.Context) error {
+		executions.Add(1)
+		return c.String(http.StatusOK, "%s", c.UserSubject())
+	})
+
+	for _, subject := range []string{"user-a", "user-b"} {
+		request := httptest.NewRequest(http.MethodPost, "/pay", nil)
+		request.Header.Set(middleware.IdempotencyHeader, "shared-key")
+		request.Header.Set("X-Test-Subject", subject)
+		response := httptest.NewRecorder()
+		app.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Body.String() != subject {
+			t.Fatalf("subject %s response = %d %q", subject, response.Code, response.Body.String())
+		}
+	}
+	if got := executions.Load(); got != 2 {
+		t.Fatalf("handler executed %d times, want 2", got)
 	}
 }
 

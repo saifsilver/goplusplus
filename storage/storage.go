@@ -3,9 +3,13 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -18,6 +22,7 @@ type Provider interface {
 // LocalStorageProvider implements local disk object storage Provider.
 type LocalStorageProvider struct {
 	baseDir string
+	initErr error
 }
 
 // NewLocalStorageProvider initializes a local disk storage provider.
@@ -25,21 +30,70 @@ func NewLocalStorageProvider(baseDir string) *LocalStorageProvider {
 	if baseDir == "" {
 		baseDir = "./uploads"
 	}
-	_ = os.MkdirAll(baseDir, 0755)
-	return &LocalStorageProvider{baseDir: baseDir}
+	absoluteDir, err := filepath.Abs(baseDir)
+	if err == nil {
+		err = os.MkdirAll(absoluteDir, 0o755)
+	}
+	return &LocalStorageProvider{baseDir: absoluteDir, initErr: err}
 }
 
 func (l *LocalStorageProvider) Upload(ctx context.Context, key string, data []byte, contentType string) (string, error) {
-	dest := filepath.Join(l.baseDir, key)
-	_ = os.MkdirAll(filepath.Dir(dest), 0755)
-	if err := os.WriteFile(dest, data, 0644); err != nil {
+	if l.initErr != nil {
+		return "", fmt.Errorf("storage: initialize local provider: %w", l.initErr)
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("/uploads/%s", key), nil
+	cleanKey, err := cleanLocalStorageKey(key)
+	if err != nil {
+		return "", err
+	}
+	root, err := os.OpenRoot(l.baseDir)
+	if err != nil {
+		return "", fmt.Errorf("storage: open local root: %w", err)
+	}
+	defer root.Close()
+
+	directory := path.Dir(cleanKey)
+	if directory != "." {
+		if err := root.MkdirAll(filepath.FromSlash(directory), 0o755); err != nil {
+			return "", fmt.Errorf("storage: create object directory: %w", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := root.WriteFile(filepath.FromSlash(cleanKey), data, 0o644); err != nil {
+		return "", err
+	}
+	return localStorageURL(cleanKey), nil
 }
 
 func (l *LocalStorageProvider) GetPresignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	return fmt.Sprintf("/uploads/%s", key), nil
+	if l.initErr != nil {
+		return "", fmt.Errorf("storage: initialize local provider: %w", l.initErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	cleanKey, err := cleanLocalStorageKey(key)
+	if err != nil {
+		return "", err
+	}
+	return localStorageURL(cleanKey), nil
+}
+
+func cleanLocalStorageKey(key string) (string, error) {
+	normalized := strings.ReplaceAll(key, "\\", "/")
+	cleaned := path.Clean(normalized)
+	if cleaned != normalized || cleaned == "." || !fs.ValidPath(cleaned) {
+		return "", fmt.Errorf("storage: invalid object key")
+	}
+	return cleaned, nil
+}
+
+func localStorageURL(key string) string {
+	return (&url.URL{Path: "/uploads/" + key}).EscapedPath()
 }
 
 // S3Config holds AWS S3 configuration parameters.

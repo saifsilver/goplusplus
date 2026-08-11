@@ -53,3 +53,30 @@ func TestLocalStorageProviderAndS3(t *testing.T) {
 		t.Errorf("unexpected CloudFront URL: %s", cdnURL)
 	}
 }
+
+func TestLocalStorageRejectsPathsOutsideRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "uploads")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatalf("mkdir storage root: %v", err)
+	}
+	provider := storage.NewLocalStorageProvider(root)
+
+	if _, err := provider.Upload(context.Background(), "../escape.txt", []byte("secret"), "text/plain"); err == nil {
+		t.Fatal("expected traversal upload to fail")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "escape.txt")); !os.IsNotExist(err) {
+		t.Fatalf("escape file exists or stat failed unexpectedly: %v", err)
+	}
+
+	outDir := filepath.Join(parent, "outside")
+	if err := os.Mkdir(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir outside directory: %v", err)
+	}
+	if err := os.Symlink(outDir, filepath.Join(root, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := provider.Upload(context.Background(), "link/escape.txt", []byte("secret"), "text/plain"); err == nil {
+		t.Fatal("expected symlink escape upload to fail")
+	}
+}

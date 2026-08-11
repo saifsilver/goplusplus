@@ -1,10 +1,13 @@
 package cache
 
 import (
+	"container/list"
 	"context"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 type BoundedConfig struct {
@@ -14,9 +17,15 @@ type BoundedConfig struct {
 // BoundedMemoryStore implements an in-memory Store with strict capacity limits to prevent OOM memory growth.
 type BoundedMemoryStore struct {
 	mu         sync.RWMutex
-	store      map[string]cacheItem
-	keysOrder  []string
+	store      map[string]*boundedEntry
+	keysOrder  list.List
 	maxEntries int
+	loads      singleflight.Group
+}
+
+type boundedEntry struct {
+	item  cacheItem
+	order *list.Element
 }
 
 // NewBoundedMemoryStore initializes a capacity-capped in-memory cache store.
@@ -25,8 +34,7 @@ func NewBoundedMemoryStore(maxEntries int) *BoundedMemoryStore {
 		maxEntries = 10000
 	}
 	return &BoundedMemoryStore{
-		store:      make(map[string]cacheItem),
-		keysOrder:  make([]string, 0, maxEntries),
+		store:      make(map[string]*boundedEntry),
 		maxEntries: maxEntries,
 	}
 }
@@ -36,8 +44,8 @@ func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl t
 	defer s.mu.Unlock()
 
 	// If key exists, update and keep position
-	if _, ok := s.store[key]; ok {
-		s.store[key] = cacheItem{val: val, expiresAt: time.Now().Add(ttl)}
+	if entry, ok := s.store[key]; ok {
+		entry.item = cacheItem{val: val, expiresAt: time.Now().Add(ttl)}
 		return nil
 	}
 
@@ -46,25 +54,28 @@ func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl t
 		s.evictOneLocked()
 	}
 
-	s.store[key] = cacheItem{val: val, expiresAt: time.Now().Add(ttl)}
-	s.keysOrder = append(s.keysOrder, key)
+	order := s.keysOrder.PushBack(key)
+	s.store[key] = &boundedEntry{
+		item:  cacheItem{val: val, expiresAt: time.Now().Add(ttl)},
+		order: order,
+	}
 	return nil
 }
 
 func (s *BoundedMemoryStore) Get(ctx context.Context, key string) (any, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	item, ok := s.store[key]
-	if !ok || time.Now().After(item.expiresAt) {
+	entry, ok := s.store[key]
+	if !ok || time.Now().After(entry.item.expiresAt) {
 		return nil, false
 	}
-	return item.val, true
+	return entry.item.val, true
 }
 
 func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.store, key)
+	s.deleteLocked(key)
 	return nil
 }
 
@@ -72,12 +83,22 @@ func (s *BoundedMemoryStore) GetOrSet(ctx context.Context, key string, ttl time.
 	if val, ok := s.Get(ctx, key); ok {
 		return val, nil
 	}
-	val, err := fetcher()
-	if err != nil {
-		return nil, err
+	result := s.loads.DoChan(key, func() (any, error) {
+		if val, ok := s.Get(ctx, key); ok {
+			return val, nil
+		}
+		val, err := fetcher()
+		if err != nil {
+			return nil, err
+		}
+		return val, s.Set(ctx, key, val, ttl)
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case value := <-result:
+		return value.Val, value.Err
 	}
-	_ = s.Set(ctx, key, val, ttl)
-	return val, nil
 }
 
 func (s *BoundedMemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error {
@@ -85,7 +106,7 @@ func (s *BoundedMemoryStore) InvalidatePrefix(ctx context.Context, prefix string
 	defer s.mu.Unlock()
 	for k := range s.store {
 		if strings.HasPrefix(k, prefix) {
-			delete(s.store, k)
+			s.deleteLocked(k)
 		}
 	}
 	return nil
@@ -94,18 +115,25 @@ func (s *BoundedMemoryStore) InvalidatePrefix(ctx context.Context, prefix string
 func (s *BoundedMemoryStore) evictOneLocked() {
 	now := time.Now()
 	// First pass: remove an expired item if any
-	for i, k := range s.keysOrder {
-		if item, ok := s.store[k]; ok && now.After(item.expiresAt) {
-			delete(s.store, k)
-			s.keysOrder = append(s.keysOrder[:i], s.keysOrder[i+1:]...)
+	for element := s.keysOrder.Front(); element != nil; element = element.Next() {
+		key := element.Value.(string)
+		if entry := s.store[key]; now.After(entry.item.expiresAt) {
+			s.deleteLocked(key)
 			return
 		}
 	}
 
 	// Second pass: remove oldest item (FIFO)
-	if len(s.keysOrder) > 0 {
-		oldestKey := s.keysOrder[0]
-		delete(s.store, oldestKey)
-		s.keysOrder = s.keysOrder[1:]
+	if oldest := s.keysOrder.Front(); oldest != nil {
+		s.deleteLocked(oldest.Value.(string))
 	}
+}
+
+func (s *BoundedMemoryStore) deleteLocked(key string) {
+	entry, ok := s.store[key]
+	if !ok {
+		return
+	}
+	s.keysOrder.Remove(entry.order)
+	delete(s.store, key)
 }
