@@ -371,4 +371,3 @@ func TestInteractiveCLI(t *testing.T) {
 		t.Errorf("interactive generator failed to create internal/modules/invoices/module.go")
 	}
 }
-
