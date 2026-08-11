@@ -5,6 +5,7 @@ CACHE_DIR := $(CURDIR)/.cache
 TMP_DIR := $(CURDIR)/.tmp
 TOOLS_DIR := $(CURDIR)/.tools/bin
 COVERAGE_FILE := $(TMP_DIR)/coverage.out
+COVERAGE_CLEAN_FILE := $(TMP_DIR)/coverage.clean.out
 COVERAGE_MIN ?= 55.0
 GOVULNCHECK_VERSION := v1.6.0
 GOVULNCHECK := $(TOOLS_DIR)/govulncheck
@@ -33,8 +34,11 @@ test: ## Run unit tests across all packages
 coverage: ## Run all tests and enforce the repository coverage floor
 	@echo "📊 Running test suite with coverage (minimum $(COVERAGE_MIN)%)..."
 	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
-	$(GO_ENV) go test -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
-	@coverage="$$(GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) go tool cover -func=$(COVERAGE_FILE) | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}')"; \
+	# Go 1.26 can interleave a shared multi-package profile under parallel package execution.
+	$(GO_ENV) go test -p=1 -covermode=atomic -coverprofile=$(COVERAGE_FILE) ./...
+	@awk 'NF' $(COVERAGE_FILE) > $(COVERAGE_CLEAN_FILE)
+	@coverage="$$(GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) go tool cover -func=$(COVERAGE_CLEAN_FILE) | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}')"; \
+		rm -f $(COVERAGE_CLEAN_FILE); \
 		echo "Total coverage: $${coverage}%"; \
 		awk -v actual="$${coverage}" -v minimum="$(COVERAGE_MIN)" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || \
 		{ echo "❌ Coverage $${coverage}% is below required $(COVERAGE_MIN)%"; exit 1; }
