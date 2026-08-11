@@ -16,7 +16,7 @@ With `goplusplus`, developers focus **exclusively on domain business logic and i
 | Category | What Developer Writes | What `goplusplus` Handles Automatically |
 | :--- | :--- | :--- |
 | **Routing** | `app.GET("/users/:id", handler)` | Zero-allocation Radix tree matching, path parameter parsing (`c.Param`), wildcard matching, and context recycling (`sync.Pool`). |
-| **Data Binding** | `c.BindAndValidate(&struct)` | Decodes JSON body, validates struct tags (`validate:"required,email"`), and returns RFC 7807 problem details automatically on error. |
+| **Data Binding** | `c.BindAndValidate(&struct)` | Decodes JSON body, applies built-in validation tags, and returns RFC 7807 problem details automatically on error. |
 | **Security** | `app.Use(middleware.Security())` | OWASP Security Headers (HSTS, CSP, XSS), CORS preflight, Token Bucket Rate Limiting, Panic Recovery, and Request Execution Timeouts. |
 | **Protocol Docs** | `app.AutoSwaggerUI()` | Dynamic OpenAPI 3.0 spec generation, Swagger UI dashboard (`/swagger`), GraphQL Playground (`/graphql`), and gRPC HTTP/2 multiplexing. |
 | **Database** | `db.Query(ctx, ...)` | PgBouncer transaction mode, primary/replica routing (`RW`/`RO`), Read-Your-Own-Writes consistency, and **Slow Query Advisor** (SQL fingerprinting & suggestions). |
@@ -87,12 +87,16 @@ v1.GET("/users/:id", func(c *gpp.Context) error {
 ---
 
 ### 2. ✅ Ergonomic Struct Binding & Tag Validation
-Decode JSON request payloads and validate struct constraints (`validate:"required"`, `validate:"email"`) in **1 atomic step**:
+Decode JSON request payloads and validate struct constraints in **1 atomic step**. The validator is implemented inside `goplusplus` using only the Go standard library—there is no external validation dependency. It supports type-aware bounds, comparisons, formats, cross-field and conditional rules, nested structs, and collection/map traversal:
 
 ```go
 type CreateUserRequest struct {
-    Name  string `json:"name" validate:"required"`
-    Email string `json:"email" validate:"required,email"`
+    Name     string   `json:"name" validate:"required,min=2,max=100"`
+    Email    string   `json:"email" validate:"required,email"`
+    Age      int      `json:"age" validate:"gte=18,lte=120"`
+    Role     string   `json:"role" validate:"oneof=admin editor viewer"`
+    Tags     []string `json:"tags" validate:"max=10,dive,required"`
+    Website  string   `json:"website" validate:"omitempty,url"`
 }
 
 app.POST("/users", func(c *gpp.Context) error {
@@ -103,6 +107,16 @@ app.POST("/users", func(c *gpp.Context) error {
     return c.JSON(201, gpp.H{"status": "created", "user": req})
 })
 ```
+
+Built-in validation rules:
+
+- Presence: `required`, `omitempty`, `omitnil`, `required_if`, `required_unless`, `required_with`, `required_with_all`, `required_without`, `required_without_all`, plus the matching `excluded_*` rules.
+- Bounds and comparisons: `min`, `max`, `len`, `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, and their `*field` variants.
+- Collections and choices: `oneof`, `not_oneof`, `unique`, `dive`, and `keys`/`endkeys` for maps.
+- Text: `alpha`, `alphanum`, `numeric`, `number`, `lowercase`, `uppercase`, `ascii`, `printascii`, `boolean`, `contains*`, `excludes*`, `startswith`, and `endswith`.
+- Formats: `email`, `url`, `http_url`, `ip`, `ipv4`, `ipv6`, `cidr`, `cidrv4`, `cidrv6`, `hostname`, `hostname_port`, `uuid`, `uuid3`, `uuid4`, `uuid5`, `json`, `base64`, `base64url`, `hexadecimal`, `hexcolor`, and `datetime`.
+
+Unknown rules and malformed parameters fail closed as internal configuration errors; they are never silently skipped.
 
 ---
 
