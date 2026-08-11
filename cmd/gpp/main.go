@@ -47,11 +47,11 @@ func runCLI(args []string) error {
 		case "module":
 			return generateModule(targetName)
 		case "middleware":
-			generateMiddleware(targetName)
+			return generateMiddleware(targetName)
 		case "migration":
-			generateMigration(targetName)
+			return generateMigration(targetName)
 		case "handler":
-			generateHandler(targetName)
+			return generateHandler(targetName)
 		case "terraform":
 			return generateTerraform(targetName)
 		case "hosting":
@@ -90,9 +90,11 @@ func printUsage() {
 	fmt.Println("  gpp version                   - Display framework version")
 }
 
-func generateMiddleware(name string) {
+func generateMiddleware(name string) error {
 	dir := "middleware"
-	_ = os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create middleware directory: %w", err)
+	}
 	fileName := strings.ToLower(name) + ".go"
 	filePath := filepath.Join(dir, fileName)
 
@@ -119,13 +121,18 @@ func %s() gpp.HandlerFunc {
 }
 `, funcName, funcName, funcName)
 
-	_ = os.WriteFile(filePath, []byte(content), 0644)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write middleware file: %w", err)
+	}
 	fmt.Printf("✅ Custom middleware generated in %s!\n", filePath)
+	return nil
 }
 
-func generateMigration(name string) {
+func generateMigration(name string) error {
 	dir := "migrations"
-	_ = os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create migration directory: %w", err)
+	}
 	timestamp := time.Now().Format("20060102150405")
 	fileName := fmt.Sprintf("%s_%s.sql", timestamp, strings.ToLower(name))
 	filePath := filepath.Join(dir, fileName)
@@ -140,13 +147,18 @@ CREATE TABLE IF NOT EXISTS %s (
 -- DROP TABLE IF EXISTS %s;
 `, name, strings.ToLower(name), strings.ToLower(name))
 
-	_ = os.WriteFile(filePath, []byte(content), 0644)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write migration file: %w", err)
+	}
 	fmt.Printf("✅ Migration file generated in %s!\n", filePath)
+	return nil
 }
 
-func generateHandler(name string) {
+func generateHandler(name string) error {
 	dir := "handlers"
-	_ = os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create handler directory: %w", err)
+	}
 	fileName := strings.ToLower(name) + ".go"
 	filePath := filepath.Join(dir, fileName)
 
@@ -172,8 +184,11 @@ func %s(c *gpp.Context) error {
 }
 `, funcName, name, funcName, funcName)
 
-	_ = os.WriteFile(filePath, []byte(content), 0644)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("write handler file: %w", err)
+	}
 	fmt.Printf("✅ Handler generated in %s!\n", filePath)
+	return nil
 }
 
 func capitalize(s string) string {
