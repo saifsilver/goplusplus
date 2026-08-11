@@ -158,6 +158,11 @@ adminGroup.Use(
 | **Typed Raw SQL Query** | `users, err := dbcore.QueryTyped[User](ctx, client, "SELECT * FROM users WHERE status=$1", "active")` |
 | **Auto-CRUD Resource Router** | `gpp.BindResource(v1, "/users", userRepo)` |
 | **Password Hashing & JWT** | `hash := auth.HashPassword(pass, secret)` & `token := auth.GenerateToken(userID, secret)` |
+| **ULID (K-Sortable)** | `id.NewULID()` → `"01JEX89K2P3M4N5Q6R7S8T9VWX"` |
+| **Snowflake (64-bit int)** | `node, _ := id.NewSnowflakeNode(1)` & `node.NextID()` or `id.NewSnowflake()` |
+| **UUID v4 / UUID v7** | `id.NewUUID()` (random) or `id.NewUUIDv7()` (time-ordered, k-sortable) |
+| **Stripe-Style Prefixed ID** | `id.NewPrefixed("usr")` → `"usr_01JEX89K2P..."` |
+| **ORM Auto-ID Tag** | `db:"id,pk,auto_id=ulid"` or `auto_id=snowflake` or `auto_id=uuid` or `auto_id=prefix:usr"` |
 | **Request ID** | `c.RequestID()` or `app.Use(middleware.RequestID())` |
 | **Idempotency** | `app.Use(middleware.Idempotency())` |
 | **Singleflight Deduplication** | `app.Use(middleware.Singleflight())` |

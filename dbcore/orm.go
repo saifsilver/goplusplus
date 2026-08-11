@@ -8,16 +8,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/saifsilver/goplusplus/id"
 )
 
 // Cached struct reflection metadata to guarantee zero reflection allocation per request query loop
 type structMeta struct {
-	tableName  string
-	pkField    string
-	pkColumn   string
-	columns    []string
-	fieldMap   map[string]int // column name -> struct field index
-	autoCreate int            // field index for auto-created timestamp
+	tableName      string
+	pkField        string
+	pkColumn       string
+	columns        []string
+	fieldMap       map[string]int // column name -> struct field index
+	autoCreate     int            // field index for auto-created timestamp
+	autoIDStrategy string         // auto_id strategy: "ulid", "snowflake", "uuid", "uuidv7", "prefix:xxx"
 }
 
 var metaCache sync.Map // reflect.Type -> *structMeta
@@ -55,6 +58,8 @@ func getStructMeta(t reflect.Type) *structMeta {
 					isPK = true
 				} else if opt == "auto_create" {
 					meta.autoCreate = i
+				} else if strings.HasPrefix(opt, "auto_id=") {
+					meta.autoIDStrategy = strings.TrimPrefix(opt, "auto_id=")
 				}
 			}
 		}
@@ -228,6 +233,24 @@ func (o *ORM[T]) Save(ctx context.Context, entity *T) error {
 
 	pkVal := val.FieldByName(o.meta.pkField)
 	isNew := !pkVal.IsValid() || pkVal.IsZero()
+
+	// Auto-generate primary key ID if strategy is configured and PK is empty/zero
+	if isNew && o.meta.autoIDStrategy != "" && pkVal.CanSet() {
+		generated := id.GenerateAutoID(o.meta.autoIDStrategy)
+		switch pkVal.Kind() {
+		case reflect.String:
+			if s, ok := generated.(string); ok {
+				pkVal.SetString(s)
+			}
+		case reflect.Int64:
+			if n, ok := generated.(int64); ok {
+				pkVal.SetInt(n)
+			}
+		}
+	}
+
+	// Re-check after auto_id population
+	isNew = !pkVal.IsValid() || pkVal.IsZero()
 
 	if isNew {
 		cols := make([]string, 0)
