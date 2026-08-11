@@ -163,3 +163,58 @@ func (group *RouterGroup) combineMiddlewares(handlers HandlersChain) HandlersCha
 	merged = append(merged, handlers...)
 	return merged
 }
+
+// BindResource automatically mounts a complete set of RESTful CRUD routes (GET /, GET /:id, POST /, PUT /:id, DELETE /:id) for entity T using dbcore.Repository[T].
+func BindResource[T any](group *RouterGroup, relativePath string, repo *dbcore.Repository[T]) {
+	sub := group.Group(relativePath)
+
+	sub.GET("", func(c *Context) error {
+		page, limit := c.GetPageAndLimit(20)
+		whereClause := c.Query("q")
+		items, total, err := repo.FindPaginated(c.Request.Context(), page, limit, whereClause)
+		if err != nil {
+			return c.InternalError(err.Error())
+		}
+		return c.Paginate(http.StatusOK, items, page, limit, total)
+	})
+
+	sub.GET("/:id", func(c *Context) error {
+		id := c.Param("id")
+		item, err := repo.FindByID(c.Request.Context(), id)
+		if err != nil {
+			return c.NotFound("Resource not found")
+		}
+		return c.OK(item)
+	})
+
+	sub.POST("", func(c *Context) error {
+		var entity T
+		if err := c.BindAndValidate(&entity); err != nil {
+			return err
+		}
+		if err := repo.Create(c.Request.Context(), &entity); err != nil {
+			return c.InternalError(err.Error())
+		}
+		return c.Created(entity)
+	})
+
+	sub.PUT("/:id", func(c *Context) error {
+		id := c.Param("id")
+		var entity T
+		if err := c.BindAndValidate(&entity); err != nil {
+			return err
+		}
+		if err := repo.Update(c.Request.Context(), id, &entity); err != nil {
+			return c.InternalError(err.Error())
+		}
+		return c.OK(entity)
+	})
+
+	sub.DELETE("/:id", func(c *Context) error {
+		id := c.Param("id")
+		if err := repo.Delete(c.Request.Context(), id); err != nil {
+			return c.NotFound("Resource not found")
+		}
+		return c.NoContent()
+	})
+}

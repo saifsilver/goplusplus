@@ -111,6 +111,110 @@ func (c *Context) Param(key string) string {
 	return c.Params.Get(key)
 }
 
+// ParamInt64 retrieves a path parameter converted directly to int64 with optional default fallback.
+func (c *Context) ParamInt64(key string, defaultValue ...int64) int64 {
+	valStr := c.Param(key)
+	if valStr == "" {
+		if len(defaultValue) > 0 {
+			return defaultValue[0]
+		}
+		return 0
+	}
+	if val, err := strconv.ParseInt(valStr, 10, 64); err == nil {
+		return val
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return 0
+}
+
+// ParamInt retrieves a path parameter converted directly to int with optional default fallback.
+func (c *Context) ParamInt(key string, defaultValue ...int) int {
+	valStr := c.Param(key)
+	if valStr == "" {
+		if len(defaultValue) > 0 {
+			return defaultValue[0]
+		}
+		return 0
+	}
+	if val, err := strconv.Atoi(valStr); err == nil {
+		return val
+	}
+	if len(defaultValue) > 0 {
+		return defaultValue[0]
+	}
+	return 0
+}
+
+// UserID extracts the active authenticated user ID (int64) from request context storage ("user_id" or "sub").
+func (c *Context) UserID() int64 {
+	if id := c.GetInt64("user_id"); id != 0 {
+		return id
+	}
+	return c.GetInt64("sub")
+}
+
+// RequireUserID returns the active authenticated user ID, or returns a 401 Unauthorized error if unauthenticated.
+func (c *Context) RequireUserID() (int64, error) {
+	id := c.UserID()
+	if id == 0 {
+		return 0, ErrUnauthorized("Authentication required")
+	}
+	return id, nil
+}
+
+// OK writes an HTTP 200 OK JSON response.
+func (c *Context) OK(data any) error {
+	return c.JSON(http.StatusOK, data)
+}
+
+// Created writes an HTTP 201 Created JSON response.
+func (c *Context) Created(data any) error {
+	return c.JSON(http.StatusCreated, data)
+}
+
+// Accepted writes an HTTP 202 Accepted JSON response for asynchronous operations.
+func (c *Context) Accepted(data any) error {
+	return c.JSON(http.StatusAccepted, data)
+}
+
+// NoContent writes an HTTP 204 No Content response with zero body.
+func (c *Context) NoContent() error {
+	c.Status(http.StatusNoContent)
+	return nil
+}
+
+// BadRequest writes an HTTP 400 Bad Request error response.
+func (c *Context) BadRequest(message string) error {
+	return ErrBadRequest(message)
+}
+
+// Unauthorized writes an HTTP 401 Unauthorized error response.
+func (c *Context) Unauthorized(message string) error {
+	return ErrUnauthorized(message)
+}
+
+// Forbidden writes an HTTP 403 Forbidden error response.
+func (c *Context) Forbidden(message string) error {
+	return ErrForbidden(message)
+}
+
+// NotFound writes an HTTP 404 Not Found error response.
+func (c *Context) NotFound(message string) error {
+	return ErrNotFound(message)
+}
+
+// Conflict writes an HTTP 409 Conflict error response.
+func (c *Context) Conflict(message string) error {
+	return ErrConflict(message)
+}
+
+// InternalError writes an HTTP 500 Internal Server Error response.
+func (c *Context) InternalError(message string) error {
+	return ErrInternal(message)
+}
+
 // PathValue is an alias for Param, providing Go 1.22+ r.PathValue() compatibility.
 func (c *Context) PathValue(key string) string {
 	return c.Param(key)

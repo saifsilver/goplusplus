@@ -3,7 +3,10 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +16,79 @@ import (
 
 	"github.com/saifsilver/goplusplus"
 )
+
+// HashPassword hashes a raw password string securely using HMAC-SHA256 with a secret salt.
+func HashPassword(password, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(password))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// VerifyPassword compares a raw password against an encoded password hash using constant-time comparison.
+func VerifyPassword(password, secret, expectedHash string) bool {
+	hash := HashPassword(password, secret)
+	return hmac.Equal([]byte(hash), []byte(expectedHash))
+}
+
+// TokenClaims payload for signed auth tokens.
+type TokenClaims struct {
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email,omitempty"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+// GenerateToken creates a signed bearer authentication token for a user ID.
+func GenerateToken(userID int64, secret string, ttl ...time.Duration) string {
+	duration := 24 * time.Hour
+	if len(ttl) > 0 && ttl[0] > 0 {
+		duration = ttl[0]
+	}
+	claims := TokenClaims{
+		UserID:    userID,
+		ExpiresAt: time.Now().Add(duration).Unix(),
+	}
+	claimsBytes, _ := json.Marshal(claims)
+	payload := base64.RawURLEncoding.EncodeToString(claimsBytes)
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	return fmt.Sprintf("%s.%s", payload, sig)
+}
+
+// VerifyToken verifies a signed authentication token and returns the decoded TokenClaims.
+func VerifyToken(token, secret string) (*TokenClaims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid token format")
+	}
+
+	payload, sig := parts[0], parts[1]
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(sig), []byte(expectedSig)) {
+		return nil, fmt.Errorf("invalid token signature")
+	}
+
+	claimsBytes, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token payload")
+	}
+
+	var claims TokenClaims
+	if err := json.Unmarshal(claimsBytes, &claims); err != nil {
+		return nil, fmt.Errorf("failed parsing token claims: %w", err)
+	}
+
+	if time.Now().Unix() > claims.ExpiresAt {
+		return nil, fmt.Errorf("token expired")
+	}
+
+	return &claims, nil
+}
 
 // UserClaims holds user identity, assigned roles, attributes, and tenant context.
 type UserClaims struct {

@@ -18,7 +18,7 @@ import (
 )
 
 // Version is the current release version of the goplusplus framework.
-const Version = "v1.4.4"
+const Version = "v1.8.0"
 
 // CLIOptions defines configuration for application binary CLI flags.
 type CLIOptions struct {
