@@ -643,18 +643,44 @@ func TestCreateUser(t *testing.T) {
 
 ## ⚡ `cmd/gpp` CLI Code Generator
 
-Install the CLI tool to scaffold applications and domain modules in seconds:
+Install the CLI tool to scaffold a compile-tested modular monolith with explicit domain and infrastructure boundaries:
 
 ```bash
 # Install CLI
 go install github.com/saifsilver/goplusplus/cmd/gpp@latest
 
-# Scaffold new app
-gpp new myapp
+# Scaffold a new app (the module flag is recommended for published projects)
+gpp new myapp --module github.com/acme/myapp
 
 # Generate domain module
 gpp gen module order
+
+# Extract a portable module into a standalone HTTP service
+gpp extract service order --module github.com/acme/order-service
+
+# Generate deployment targets from the application root
+gpp gen terraform aws
+gpp gen hosting standard
 ```
+
+The generated application uses this structure:
+
+```text
+myapp/
+├── cmd/api/                         # process entrypoint
+├── internal/application/            # composition root
+├── internal/config/                 # validated environment config
+├── internal/modules/
+│   ├── system/                     # liveness/readiness
+│   └── users/                      # domain, service, repository, HTTP, migrations
+└── services/                         # optional extracted service modules
+```
+
+Business modules own their contracts and persistence adapters and are wired only in `internal/application`. This keeps in-process monolith calls cheap while preserving a clear extraction boundary for future microservices. Scaffold creation is atomic, refuses to overwrite existing directories, validates the Go module path, includes secure production configuration checks, and generates integration tests that run without network sockets.
+
+Portable modules expose `Build(*dbcore.Client)` and `Migrations()`. The extraction command audits internal imports, refuses hidden cross-module dependencies, copies and rewrites the module into an independently buildable service, and leaves the monolith untouched for a controlled data and traffic cutover. HTTP is the default and only extraction transport currently exposed.
+
+The AWS target generates private ECS Fargate services behind an HTTPS load balancer, encrypted RDS credentials managed by Secrets Manager, immutable ECR images, multi-AZ networking, deployment rollback, CloudWatch logs, and autoscaling. The standard target generates a portable Docker Compose deployment with Caddy automatic HTTPS, PostgreSQL health ordering, mounted secrets, persistent volumes, and backups for a conventional VPS.
 
 ---
 

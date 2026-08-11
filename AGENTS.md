@@ -184,6 +184,8 @@ adminGroup.Use(
 | **Binary CLI Flag Handler** | `app.HandleCLI(gpp.CLIOptions{Client: db, Migrations: ..., SeedPlans: ...})` |
 | **CLI App Skeleton Generator** | `gpp new <app_name>` |
 | **CLI Code Generators** | `gpp gen <module|middleware|migration|handler> <name>` |
+| **CLI Service Extraction** | `gpp extract service <module> --module <go_module_path>` |
+| **CLI Deployment Generators** | `gpp gen terraform aws` or `gpp gen hosting standard` |
 | **Offset Pagination** | `c.Paginate(200, items, page, limit, total)` |
 | **Cursor Pagination** | `c.PaginateCursor(200, items, nextCursor, hasMore, limit)` |
 | **Ephemeral Session Pagination** | `dbcore.MaterializePagination(ctx, db, query, 10*time.Minute)` |
