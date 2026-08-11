@@ -291,9 +291,7 @@ func (r *inMemRows) Next(dest []driver.Value) error {
 	if r.pos >= len(r.rows) {
 		return io.EOF
 	}
-	for i, val := range r.rows[r.pos] {
-		dest[i] = val
-	}
+	copy(dest, r.rows[r.pos])
 	r.pos++
 	return nil
 }
