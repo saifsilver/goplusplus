@@ -1,6 +1,7 @@
 package dbcore
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -10,7 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -152,11 +153,11 @@ func prepareMigrations(migrations []Migration) ([]preparedMigration, error) {
 		digest := sha256.Sum256([]byte(sqlText))
 		prepared = append(prepared, preparedMigration{Migration: migration, checksum: hex.EncodeToString(digest[:])})
 	}
-	sort.Slice(prepared, func(i, j int) bool {
-		if prepared[i].Version == prepared[j].Version {
-			return prepared[i].ID < prepared[j].ID
+	slices.SortFunc(prepared, func(a, b preparedMigration) int {
+		if a.Version != b.Version {
+			return cmp.Compare(a.Version, b.Version)
 		}
-		return prepared[i].Version < prepared[j].Version
+		return cmp.Compare(a.ID, b.ID)
 	})
 	return prepared, nil
 }
@@ -199,7 +200,7 @@ func MigrateEmbed(ctx context.Context, database MigrationDatabase, embedFS fs.FS
 	if len(files) == 0 {
 		return fmt.Errorf("dbcore/migrate: directory %q contains no SQL migrations", dir)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	migrations := make([]Migration, 0, len(files))
 	for index, filename := range files {
 		filePath := path.Join(dir, filename)

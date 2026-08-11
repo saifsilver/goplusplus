@@ -198,27 +198,26 @@ func TestGenerateAutoID(t *testing.T) {
 }
 
 func BenchmarkNewULID(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		NewULID()
 	}
 }
 
 func BenchmarkNewSnowflake(b *testing.B) {
 	node, _ := NewSnowflakeNode(1)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		node.NextID()
 	}
 }
 
 func BenchmarkNewUUID(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		NewUUID()
 	}
 }
 
 func BenchmarkNewUUIDv7(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		NewUUIDv7()
 	}
 }

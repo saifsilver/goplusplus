@@ -1,12 +1,13 @@
 package health
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -100,7 +101,7 @@ func (checker *Checker) snapshot() []namedCheck {
 		checks = append(checks, namedCheck{name: name, fn: check})
 	}
 	checker.mu.RUnlock()
-	sort.Slice(checks, func(i, j int) bool { return checks[i].name < checks[j].name })
+	slices.SortFunc(checks, func(a, b namedCheck) int { return cmp.Compare(a.name, b.name) })
 	return checks
 }
 
