@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
 // Recovery returns a panic recovery middleware that catches unexpected runtime panics.

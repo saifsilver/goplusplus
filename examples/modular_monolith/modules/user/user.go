@@ -4,7 +4,7 @@ package user
 import (
 	"net/http"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
 // UserModule represents the self-contained User domain module.

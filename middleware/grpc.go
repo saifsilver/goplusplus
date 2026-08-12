@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
 // IsGRPC checks whether an incoming request is a gRPC request based on Content-Type header and protocol.

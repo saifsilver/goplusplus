@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
 // SwaggerUI returns a HandlerFunc that serves an interactive Swagger UI web interface for OpenAPI specs.

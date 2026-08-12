@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/saifsilver/goplusplus"
+	gpp "github.com/saifsilver/goplusplus"
 )
 
 // CORSConfig defines configuration settings for Cross-Origin Resource Sharing.
