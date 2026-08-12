@@ -33,6 +33,26 @@ func (group *RouterGroup) Group(relativePath string, handlers ...HandlerFunc) *R
 	}
 }
 
+// Version creates a versioned router group under /api/{version} or /{version}.
+func (group *RouterGroup) Version(v string, relativePath ...string) *RouterGroup {
+	vClean := strings.TrimPrefix(v, "/")
+	prefix := "/api/" + vClean
+	if len(relativePath) > 0 && relativePath[0] != "" {
+		prefix = prefix + "/" + strings.TrimPrefix(relativePath[0], "/")
+	}
+	return group.Group(prefix)
+}
+
+// V1 creates a router group versioned under /api/v1.
+func (group *RouterGroup) V1(relativePath ...string) *RouterGroup {
+	return group.Version("v1", relativePath...)
+}
+
+// V2 creates a router group versioned under /api/v2.
+func (group *RouterGroup) V2(relativePath ...string) *RouterGroup {
+	return group.Version("v2", relativePath...)
+}
+
 // RegisterModule mounts a domain module under a relative sub-route group.
 func (group *RouterGroup) RegisterModule(relativePath string, module Module) {
 	subGroup := group.Group(relativePath)
@@ -126,6 +146,10 @@ func (group *RouterGroup) StaticFS(relativePath string, fsys fs.FS) {
 			if mount != "/" {
 				return ErrNotFound("Static resource not found")
 			}
+			ext := path.Ext(relative)
+			if ext != "" && ext != ".html" {
+				return ErrNotFound("Static resource not found: " + relative)
+			}
 			servePath, exists = resolveStaticPath(fsys, "index.html")
 			if !exists {
 				return ErrNotFound("Static resource not found")
@@ -202,22 +226,28 @@ func staticRelativePath(mount, requestPath string) (string, bool) {
 
 func resolveStaticPath(fsys fs.FS, relative string) (string, bool) {
 	file, err := fsys.Open(relative)
-	if err != nil {
-		return "", false
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "", false
-	}
-	if info.IsDir() {
-		index := path.Join(relative, "index.html")
-		if indexFile, err := fsys.Open(index); err == nil {
-			_ = indexFile.Close()
-			return index, true
+	if err == nil {
+		defer file.Close()
+		info, err := file.Stat()
+		if err == nil {
+			if info.IsDir() {
+				index := path.Join(relative, "index.html")
+				if indexFile, err := fsys.Open(index); err == nil {
+					_ = indexFile.Close()
+					return index, true
+				}
+			} else {
+				return relative, true
+			}
 		}
 	}
-	return relative, true
+	if base := path.Base(relative); base != "" && base != "." && base != "/" {
+		if f, err := fsys.Open(base); err == nil {
+			_ = f.Close()
+			return base, true
+		}
+	}
+	return "", false
 }
 
 func staticServerPath(relative string) string {

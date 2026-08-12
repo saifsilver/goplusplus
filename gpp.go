@@ -46,6 +46,8 @@ type Engine struct {
 	graphqlSchema   *graphql.Schema
 	staticMu        sync.RWMutex
 	staticRoutes    []staticRoute
+	dbClient        *dbcore.Client
+	authManager     any
 	NotFoundHandler HandlerFunc
 	ErrorHandler    func(c *Context, err error)
 	Server          *http.Server
@@ -56,6 +58,7 @@ type Engine struct {
 	ShutdownTimeout time.Duration
 	JSONBinding     JSONBindingConfig
 }
+
 
 // New creates a fresh instance of the go++ engine with high-performance default configurations.
 func New() *Engine {

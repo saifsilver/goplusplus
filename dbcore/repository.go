@@ -276,8 +276,11 @@ func scanStruct(rows *sql.Rows, dest any) error {
 		}
 		if dbTag == "" {
 			dbTag = strings.ToLower(field.Name)
+		} else {
+			dbTag = strings.TrimSpace(strings.Split(dbTag, ",")[0])
 		}
-		fieldMap[dbTag] = structElem.Field(i)
+		fieldMap[strings.ToLower(dbTag)] = structElem.Field(i)
+
 	}
 
 	scanTargets := make([]any, len(cols))

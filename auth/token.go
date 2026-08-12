@@ -541,6 +541,22 @@ func AuthenticateWithManager(manager *TokenManager) gpp.HandlerFunc {
 	}
 }
 
+// OptionalAuthenticateWithManager installs identity if a valid bearer token is present, but permits unauthenticated requests to proceed.
+func OptionalAuthenticateWithManager(manager *TokenManager) gpp.HandlerFunc {
+	return func(c *gpp.Context) error {
+		clearVerifiedIdentity(c)
+		token, ok := bearerToken(c)
+		if ok && manager != nil {
+			claims, err := manager.verifyCompatible(c.Request.Context(), token)
+			if err == nil {
+				_ = installVerifiedIdentity(c, claims)
+			}
+		}
+		return c.Next()
+	}
+}
+
+
 // UniversalAuth accepts a valid process-local session or compatibility JWT.
 // New applications should prefer UniversalAuthWithManager.
 func UniversalAuth(secret string, sessions *RedisSessionManager) gpp.HandlerFunc {

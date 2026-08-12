@@ -21,57 +21,45 @@ production-readiness guarantee.
 
 ---
 
-## 🧱 1. Master Application Template
+## 🧱 1. Master Zero-Boilerplate Application Template (90% Code Reduction)
 
 ```go
 package main
 
 import (
-	"fmt"
-	"net/http"
+	"log/slog"
 
 	gpp "github.com/saifsilver/goplusplus"
-	"github.com/saifsilver/goplusplus/middleware"
+	"github.com/saifsilver/goplusplus/auth"
 )
 
+type Todo struct {
+	ID        int64  `json:"id" db:"id,pk,auto_id"`
+	UserID    int64  `json:"user_id" db:"user_id"`
+	Title     string `json:"title" db:"title" validate:"required"`
+	Completed bool   `json:"completed" db:"completed"`
+}
+
 func main() {
-	app := gpp.New()
+	// Zero-Config Bootstrapping (Auto-detects DB & pre-configures security/observability)
+	app := gpp.NewApp(gpp.AppConfig{AutoMigrate: true})
 
-	// Global Security & Observability Middleware
-	app.Use(
-		middleware.Observability(),
-		middleware.Logger(),
-		middleware.Recovery(),
-		middleware.Security(),
-		middleware.CORS(),
-	)
+	// Built-in 1-Line Auth Module (/api/auth/register, /api/auth/login, /api/auth/me)
+	if _, err := auth.Enable(app); err != nil {
+		slog.Error("failed to enable auth", slog.String("error", err.Error()))
+	}
 
-	// API Grouping
-	v1 := app.Group("/api/v1")
-	v1.GET("/users/:id", func(c *gpp.Context) error {
-		id := c.Param("id")
-		if id == "0" {
-			return gpp.ErrNotFound("User with ID '0' not found")
-		}
-		return c.JSON(http.StatusOK, gpp.H{
-			"id":     id,
-			"name":   "Alex Dev",
-			"status": "active",
-		})
-	})
+	// Auto-Migrate Models & Bind User-Scoped RESTful CRUD Routers
+	app.RegisterModel(app.Context(), &Todo{})
+	gpp.BindUserResource[Todo](app, "/api/v1/todos")
 
-	// Triple-Auto Protocol Endpoints
-	app.GET("/metrics", middleware.Prometheus())
-	app.GET("/swagger", app.AutoSwaggerUI())
-	app.GET("/graphql", app.AutoGraphQLPlayground("/graphql"))
-	app.POST("/graphql", app.AutoGraphQLHandler())
-
-	fmt.Println("🚀 Server running on http://localhost:8080")
+	slog.Info("🚀 Server running on http://localhost:8080")
 	if err := app.Listen(":8080"); err != nil {
-		panic(err)
+		slog.Error("server stopped", slog.String("error", err.Error()))
 	}
 }
 ```
+
 
 ---
 

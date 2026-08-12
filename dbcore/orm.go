@@ -334,6 +334,14 @@ func (o *ORM[T]) Delete(ctx context.Context, entity *T) error {
 	return err
 }
 
+// DeleteByID removes a record from the database by primary key ID.
+func (o *ORM[T]) DeleteByID(ctx context.Context, id any) error {
+	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE %s = $1", o.tableName, o.meta.pkColumn)
+	_, err := o.client.Exec(ctx, deleteSQL, id)
+	return err
+}
+
+
 // AutoMigrate creates the database table automatically if it does not exist based on struct fields.
 // Supports full SQL type mapping: SMALLINT, INTEGER, BIGINT, REAL, DOUBLE PRECISION, BOOLEAN, TIMESTAMP, TEXT.
 func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
@@ -382,6 +390,53 @@ func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
 	_, err := o.client.Exec(ctx, createSQL)
 	return err
 }
+
+// AutoMigrateModel creates a database table automatically for any struct model instance or pointer.
+func AutoMigrateModel(ctx context.Context, client *Client, model any) error {
+	t := reflect.TypeOf(model)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return fmt.Errorf("dbcore: model must be a struct or struct pointer, got %T", model)
+	}
+
+	meta := getStructMeta(t)
+	sqlCols := make([]string, 0, len(meta.columns))
+
+	for _, colName := range meta.columns {
+		idx := meta.fieldMap[colName]
+		fieldType := t.Field(idx).Type
+
+		colType := goTypeToSQL(fieldType)
+		isPK := colName == meta.pkColumn
+		if isPK {
+			if meta.autoIDStrategy != "" {
+				switch meta.autoIDStrategy {
+				case "snowflake":
+					colType = "BIGINT"
+				default:
+					colType = "TEXT"
+				}
+			}
+			if client.Dialect() == "sqlite" {
+				if colType == "INTEGER" || colType == "BIGINT" {
+					sqlCols = append(sqlCols, fmt.Sprintf("%s INTEGER PRIMARY KEY AUTOINCREMENT", colName))
+					continue
+				}
+			}
+			sqlCols = append(sqlCols, fmt.Sprintf("%s %s PRIMARY KEY", colName, colType))
+			continue
+		}
+
+		sqlCols = append(sqlCols, fmt.Sprintf("%s %s", colName, colType))
+	}
+
+	createSQL := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", meta.tableName, strings.Join(sqlCols, ", "))
+	_, err := client.Exec(ctx, createSQL)
+	return err
+}
+
 
 // goTypeToSQL maps a Go reflect.Type to the most appropriate SQL column type.
 func goTypeToSQL(t reflect.Type) string {

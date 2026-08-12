@@ -3,6 +3,7 @@ package gpp
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/saifsilver/goplusplus/dbcore"
 	"github.com/saifsilver/goplusplus/queue"
 )
 
@@ -65,6 +67,28 @@ func (c *Context) reset(w http.ResponseWriter, req *http.Request) {
 		delete(c.keys, k)
 	}
 }
+
+// Engine returns the engine back-reference for this request.
+func (c *Context) Engine() *Engine {
+	return c.engine
+}
+
+// DBClient returns the active dbcore.Client associated with the engine.
+func (c *Context) DBClient() *dbcore.Client {
+	if c.engine != nil {
+		return c.engine.dbClient
+	}
+	return nil
+}
+
+// DB returns the primary *sql.DB connection associated with the engine.
+func (c *Context) DB() *sql.DB {
+	if c.engine != nil {
+		return c.engine.DB()
+	}
+	return nil
+}
+
 
 type responseTracker struct {
 	http.ResponseWriter
