@@ -14,4 +14,3 @@
 - ./storage.NewS3Client: changed from func(S3Config) *S3Client to func(context.Context, S3Config) (*S3Client, error)
 - ./storage.S3Config.AccessKeyID: removed
 - ./storage.S3Config.SecretAccessKey: removed
-- Version: value changed from "v1.11.5" to "v1.11.6"

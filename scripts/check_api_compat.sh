@@ -11,6 +11,8 @@ new_export="$repo_root/.tmp/api-new.export"
 actual="$repo_root/.tmp/api-incompatible.txt"
 sorted_expected="$repo_root/.tmp/api-expected.sorted"
 sorted_actual="$repo_root/.tmp/api-actual.sorted"
+normalized_expected="$repo_root/.tmp/api-expected.normalized"
+normalized_actual="$repo_root/.tmp/api-actual.normalized"
 
 test -x "$apidiff" || {
 	echo "api-compat: apidiff is missing; run 'make install-tools'" >&2
@@ -41,8 +43,10 @@ GOCACHE="$repo_root/.cache" GOTMPDIR="$repo_root/.tmp" TMPDIR="$repo_root/.tmp" 
 	"$apidiff" -m -w "$new_export" "$module"
 "$apidiff" -m -incompatible "$old_export" "$new_export" > "$actual"
 
-LC_ALL=C sort "$expected" > "$sorted_expected"
-LC_ALL=C sort "$actual" > "$sorted_actual"
+sh "$repo_root/scripts/normalize_api_diff.sh" "$expected" > "$normalized_expected"
+sh "$repo_root/scripts/normalize_api_diff.sh" "$actual" > "$normalized_actual"
+LC_ALL=C sort "$normalized_expected" > "$sorted_expected"
+LC_ALL=C sort "$normalized_actual" > "$sorted_actual"
 if ! diff -u "$sorted_expected" "$sorted_actual"; then
 	echo "api-compat: incompatible API changes differ from the reviewed exception set" >&2
 	exit 1

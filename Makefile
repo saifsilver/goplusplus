@@ -1,4 +1,4 @@
-.PHONY: build test coverage format-check lint static-analysis docs-check race fuzz-smoke api-compat benchmark-gate security verify install-tools install-hooks bench load-test fmt tag clean help
+.PHONY: build test coverage format-check lint static-analysis docs-check race fuzz-smoke api-compat api-compat-test benchmark-gate security verify install-tools install-hooks bench load-test fmt tag clean help
 
 APP_NAME := goplusplus
 CACHE_DIR := $(CURDIR)/.cache
@@ -96,7 +96,10 @@ fuzz-smoke: ## Exercise every fuzz target briefly
 	@echo "🧬 Running fuzz smoke suite..."
 	@sh scripts/fuzz_smoke.sh
 
-api-compat: ## Reject unreviewed breaking API changes since v1.11.5
+api-compat-test: ## Test API-diff normalization rules
+	@sh scripts/check_api_compat_test.sh
+
+api-compat: api-compat-test ## Reject unreviewed breaking API changes since v1.11.5
 	@echo "🧩 Checking public API compatibility..."
 	@sh scripts/check_api_compat.sh
 

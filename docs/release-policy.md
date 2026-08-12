@@ -15,7 +15,9 @@ changes are recorded in `api/compatibility-exceptions-v1.11.5.txt`; any change t
 that reviewed exception set requires explicit release-owner approval. Because
 the unreleased tree contains those breaks, it must not be published as another
 v1 minor or patch release without compatibility shims. The default release path
-is the next major version.
+is the next major version. Changes between valid semantic-version values in the
+exported `Version` constant are treated as release metadata; removal, type
+changes, and malformed version values remain compatibility failures.
 
 Release candidates must pass the required CI workflow, produce a clean module,
 publish a changelog entry, and contain no undocumented public API changes.
