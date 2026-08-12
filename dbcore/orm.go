@@ -64,10 +64,14 @@ func getStructMeta(t reflect.Type) *structMeta {
 		}
 
 		tag := field.Tag.Get("db")
+		if tag == "-" {
+			continue
+		}
+
 		colName := toSnakeCase(field.Name)
 		isPK := false
 
-		if tag != "" && tag != "-" {
+		if tag != "" {
 			parts := strings.Split(tag, ",")
 			colName = strings.TrimSpace(parts[0])
 			for _, opt := range parts[1:] {
@@ -387,8 +391,24 @@ func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
 	}
 
 	createSQL := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", o.tableName, strings.Join(sqlCols, ", "))
-	_, err := o.client.Exec(ctx, createSQL)
-	return err
+	if _, err := o.client.Exec(ctx, createSQL); err != nil {
+		return err
+	}
+
+	// Auto-add any new/missing columns to existing table
+	for _, colName := range o.meta.columns {
+		if colName == o.meta.pkColumn {
+			continue
+		}
+		idx := o.meta.fieldMap[colName]
+		fieldType := structType.Field(idx).Type
+		colType := goTypeToSQL(fieldType)
+
+		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s;", o.tableName, colName, colType)
+		_, _ = o.client.Exec(ctx, alterSQL)
+	}
+
+	return nil
 }
 
 // AutoMigrateModel creates a database table automatically for any struct model instance or pointer.
