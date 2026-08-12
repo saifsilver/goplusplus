@@ -12,7 +12,9 @@ import (
 )
 
 var (
-	ErrInvalidDateTimeStyle   = errors.New("i18n: invalid date or time style")
+	// ErrInvalidDateTimeStyle indicates an unsupported localized output style.
+	ErrInvalidDateTimeStyle = errors.New("i18n: invalid date or time style")
+	// ErrInvalidDateTimeProfile indicates malformed locale date/time metadata.
 	ErrInvalidDateTimeProfile = errors.New("i18n: invalid date-time profile")
 )
 
@@ -20,10 +22,14 @@ var (
 type Style string
 
 const (
-	Short  Style = "short"
+	// Short selects compact numeric output.
+	Short Style = "short"
+	// Medium selects the default abbreviated output.
 	Medium Style = "medium"
-	Long   Style = "long"
-	Full   Style = "full"
+	// Long selects expanded month and time-zone output.
+	Long Style = "long"
+	// Full selects the most detailed localized output.
+	Full Style = "full"
 )
 
 // DateTimeOptions configures combined output. Empty styles default to Medium.

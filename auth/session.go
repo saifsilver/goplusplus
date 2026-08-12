@@ -41,6 +41,7 @@ type RedisSessionManager struct {
 	maxSessions int
 }
 
+// NewSessionManager constructs a bounded process-local session manager.
 func NewSessionManager(config SessionConfig) (*RedisSessionManager, error) {
 	if config.TTL < 5*time.Minute || config.TTL > 30*24*time.Hour {
 		return nil, errors.New("auth: session TTL is outside safe bounds")
@@ -120,6 +121,7 @@ func (manager *RedisSessionManager) CreateSession(c *gpp.Context, claims UserCla
 	return identifier
 }
 
+// RevokeSession removes a server-side session identifier.
 func (manager *RedisSessionManager) RevokeSession(identifier string) {
 	if manager == nil || identifier == "" {
 		return
@@ -129,6 +131,7 @@ func (manager *RedisSessionManager) RevokeSession(identifier string) {
 	manager.mu.Unlock()
 }
 
+// SessionMiddleware authenticates a request using the configured session cookie.
 func (manager *RedisSessionManager) SessionMiddleware() gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
 		clearVerifiedIdentity(c)

@@ -120,6 +120,7 @@ type legacyV1PasswordVerifier struct {
 	pepper []byte
 }
 
+// VerifyPassword verifies the signed legacy v1 password representation.
 func (verifier *legacyV1PasswordVerifier) VerifyPassword(password, encodedHash string) (bool, error) {
 	if len(encodedHash) != base64.RawURLEncoding.EncodedLen(sha256.Size) {
 		return false, ErrPasswordFormatNotRecognized

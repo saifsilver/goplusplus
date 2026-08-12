@@ -18,6 +18,7 @@ var singleflightSecurityHeaders = []string{
 	"Authorization", "Cookie", "Accept", "Accept-Encoding", "Accept-Language",
 }
 
+// SingleflightConfig defines response bounds and request-key variation.
 type SingleflightConfig struct {
 	MaxResponseBytes int                       // Maximum replayable body; defaults to 1 MiB.
 	Scope            func(*gpp.Context) string // Optional additional application-specific scope.

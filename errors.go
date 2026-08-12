@@ -121,14 +121,18 @@ type InternalFailure struct {
 	Status       int
 }
 
+// Error returns a sanitized internal failure summary.
 func (e *InternalFailure) Error() string {
 	return fmt.Sprintf("internal failure in %s [%s]", e.Operation, e.Category)
 }
 
+// Unwrap returns the causal internal error.
 func (e *InternalFailure) Unwrap() error { return e.Cause }
 
+// InternalErrorOption configures a causal internal failure.
 type InternalErrorOption func(*InternalFailure)
 
+// WithErrorCategory sets a stable internal error category.
 func WithErrorCategory(category string) InternalErrorOption {
 	return func(failure *InternalFailure) {
 		if category != "" {
@@ -142,6 +146,7 @@ func WithPublicDetail(detail string) InternalErrorOption {
 	return func(failure *InternalFailure) { failure.PublicDetail = detail }
 }
 
+// WithSafeAttributes copies explicitly non-sensitive structured log attributes.
 func WithSafeAttributes(attributes map[string]any) InternalErrorOption {
 	return func(failure *InternalFailure) {
 		failure.Attributes = make(map[string]any, len(attributes))
@@ -151,6 +156,7 @@ func WithSafeAttributes(attributes map[string]any) InternalErrorOption {
 	}
 }
 
+// WithInternalStatus sets a 5xx response status for the internal failure.
 func WithInternalStatus(status int) InternalErrorOption {
 	return func(failure *InternalFailure) {
 		if status >= http.StatusInternalServerError && status <= 599 {
@@ -178,6 +184,7 @@ func NewInternalError(operation string, cause error, options ...InternalErrorOpt
 	return failure
 }
 
+// IsInternalFailure reports whether err represents a server-side failure.
 func IsInternalFailure(err error) bool {
 	var failure *InternalFailure
 	if errors.As(err, &failure) {

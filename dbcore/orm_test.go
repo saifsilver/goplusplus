@@ -3,6 +3,7 @@ package dbcore
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -111,5 +112,25 @@ func TestORMAndTypedQueriesSuite(t *testing.T) {
 	// 8. Delete
 	if err := orm.Delete(ctx, p1); err != nil {
 		t.Fatalf("Delete failed: %v", err)
+	}
+}
+
+func TestPaginationPropagatesCountFailures(t *testing.T) {
+	ctx := context.Background()
+	client, err := NewClient(ctx, Config{RWDSN: ":memory:"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orm := NewORM[Product](client, "products")
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := orm.Paginate(ctx, 1, 10); err == nil || !strings.Contains(err.Error(), "count paginated rows") {
+		t.Fatalf("ORM.Paginate error = %v, want count failure", err)
+	}
+	if _, _, err := QueryPaginated[Product](ctx, client, "SELECT * FROM products", 1, 10); err == nil ||
+		!strings.Contains(err.Error(), "count paginated query rows") {
+		t.Fatalf("QueryPaginated error = %v, want count failure", err)
 	}
 }

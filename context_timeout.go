@@ -68,8 +68,10 @@ func newBufferedResponse(initial http.Header) *bufferedResponse {
 	return &bufferedResponse{header: initial.Clone()}
 }
 
+// Header returns the response headers buffered for a timed handler.
 func (response *bufferedResponse) Header() http.Header { return response.header }
 
+// WriteHeader records the first status written by a timed handler.
 func (response *bufferedResponse) WriteHeader(status int) {
 	response.mu.Lock()
 	defer response.mu.Unlock()
@@ -78,6 +80,7 @@ func (response *bufferedResponse) WriteHeader(status int) {
 	}
 }
 
+// Write buffers response bytes until the timed handler completes.
 func (response *bufferedResponse) Write(data []byte) (int, error) {
 	response.mu.Lock()
 	defer response.mu.Unlock()

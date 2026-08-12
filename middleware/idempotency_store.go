@@ -11,14 +11,19 @@ import (
 )
 
 var (
+	// ErrIdempotencyStoreCapacity indicates that no safe process-local entry can be admitted.
 	ErrIdempotencyStoreCapacity = errors.New("idempotency store capacity reached")
+	// ErrIdempotencyOwnershipLost indicates that a claim is absent, complete, or owned elsewhere.
 	ErrIdempotencyOwnershipLost = errors.New("idempotency claim ownership lost")
 )
 
+// IdempotencyState identifies whether a claim is pending or replayable.
 type IdempotencyState string
 
 const (
-	IdempotencyPending  IdempotencyState = "pending"
+	// IdempotencyPending identifies an in-flight request claim.
+	IdempotencyPending IdempotencyState = "pending"
+	// IdempotencyComplete identifies a stored replayable response.
 	IdempotencyComplete IdempotencyState = "complete"
 )
 
@@ -61,6 +66,7 @@ type MemoryIdempotencyStore struct {
 	maxEntries int
 }
 
+// NewMemoryIdempotencyStore creates a bounded process-local idempotency store.
 func NewMemoryIdempotencyStore(maxEntries int) *MemoryIdempotencyStore {
 	if maxEntries <= 0 {
 		maxEntries = 10000
@@ -70,6 +76,7 @@ func NewMemoryIdempotencyStore(maxEntries int) *MemoryIdempotencyStore {
 	}
 }
 
+// Claim atomically acquires or reads a process-local idempotency record.
 func (s *MemoryIdempotencyStore) Claim(
 	ctx context.Context, key, fingerprint, owner string, ttl time.Duration,
 ) (IdempotencyClaim, error) {
@@ -94,6 +101,7 @@ func (s *MemoryIdempotencyStore) Claim(
 	return IdempotencyClaim{Acquired: true, State: IdempotencyPending, Fingerprint: fingerprint}, nil
 }
 
+// Complete stores a replayable response when owner still holds the pending claim.
 func (s *MemoryIdempotencyStore) Complete(
 	ctx context.Context, key, fingerprint, owner string, response IdempotencyResponse, ttl time.Duration,
 ) error {
@@ -113,6 +121,7 @@ func (s *MemoryIdempotencyStore) Complete(
 	return nil
 }
 
+// Release removes a process-local pending claim owned by owner.
 func (s *MemoryIdempotencyStore) Release(ctx context.Context, key, owner string) error {
 	if err := ctx.Err(); err != nil {
 		return err

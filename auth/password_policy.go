@@ -14,8 +14,11 @@ import (
 type PasswordVerification uint8
 
 const (
+	// PasswordInvalid indicates that credential verification failed.
 	PasswordInvalid PasswordVerification = iota
+	// PasswordValid indicates a valid credential using the current policy.
 	PasswordValid
+	// PasswordValidNeedsRehash indicates valid credentials stored with an outdated policy.
 	PasswordValidNeedsRehash
 )
 

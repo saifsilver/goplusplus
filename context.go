@@ -71,24 +71,29 @@ type responseTracker struct {
 	written bool
 }
 
+// WriteHeader records that the response started and delegates the status.
 func (writer *responseTracker) WriteHeader(status int) {
 	writer.written = true
 	writer.ResponseWriter.WriteHeader(status)
 }
 
+// Write records that the response started and delegates the body write.
 func (writer *responseTracker) Write(data []byte) (int, error) {
 	writer.written = true
 	return writer.ResponseWriter.Write(data)
 }
 
+// Flush requests an immediate response flush when supported.
 func (writer *responseTracker) Flush() {
 	_ = http.NewResponseController(writer.ResponseWriter).Flush()
 }
 
+// Hijack delegates connection hijacking when supported by the response writer.
 func (writer *responseTracker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return http.NewResponseController(writer.ResponseWriter).Hijack()
 }
 
+// Push delegates an HTTP/2 server push or returns http.ErrNotSupported.
 func (writer *responseTracker) Push(target string, options *http.PushOptions) error {
 	if pusher, ok := writer.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, options)
@@ -96,6 +101,7 @@ func (writer *responseTracker) Push(target string, options *http.PushOptions) er
 	return http.ErrNotSupported
 }
 
+// Unwrap returns the underlying response writer.
 func (writer *responseTracker) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
 
 // Next executes the remaining handlers in the chain.

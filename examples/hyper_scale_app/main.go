@@ -85,7 +85,7 @@ func main() {
 		})
 	})
 
-	fmt.Println("🚀 Starting goplusplus Hyper-Scale Enterprise Server on http://localhost:8080")
+	fmt.Println("🚀 Starting goplusplus resilience example on http://localhost:8080")
 	fmt.Println("   • Saga Transaction Endpoint: POST http://localhost:8080/api/v1/checkout")
 
 	if err := app.Listen(":8080"); err != nil {

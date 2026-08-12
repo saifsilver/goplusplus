@@ -10,7 +10,10 @@ import (
 	"github.com/saifsilver/goplusplus"
 )
 
+// RequestIDHeader is the HTTP request correlation header.
 const RequestIDHeader = "X-Request-ID"
+
+// ContextRequestIDKey is the gpp context key containing the validated request ID.
 const ContextRequestIDKey = "request_id"
 
 // RequestID returns middleware that generates or propagates X-Request-ID HTTP headers across requests and context.

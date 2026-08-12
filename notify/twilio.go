@@ -19,6 +19,7 @@ var (
 	e164Pattern          = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 )
 
+// TwilioConfig defines credentials, sender identity, transport, and request bounds.
 type TwilioConfig struct {
 	AccountSID          string
 	AuthToken           string
@@ -31,12 +32,14 @@ type TwilioConfig struct {
 	AllowInsecureHTTP   bool
 }
 
+// TwilioProvider sends SMS messages through the Twilio HTTPS API.
 type TwilioProvider struct {
 	config   TwilioConfig
 	endpoint *url.URL
 	http     *http.Client
 }
 
+// NewTwilioProvider validates configuration without sending a request.
 func NewTwilioProvider(config TwilioConfig) (*TwilioProvider, error) {
 	if !twilioAccountPattern.MatchString(config.AccountSID) {
 		return nil, errors.New("notify: valid Twilio account SID is required")
@@ -74,6 +77,7 @@ func NewTwilioProvider(config TwilioConfig) (*TwilioProvider, error) {
 	return &TwilioProvider{config: config, endpoint: endpoint, http: config.HTTPClient}, nil
 }
 
+// SendSMS validates and submits one bounded Twilio request.
 func (provider *TwilioProvider) SendSMS(ctx context.Context, message SMSMessage) error {
 	if provider == nil || provider.http == nil || provider.endpoint == nil {
 		return ErrSMSProviderNotConfigured

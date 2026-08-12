@@ -227,12 +227,21 @@ func openCompatibilitySQLite(ctx context.Context, cfg Config) (*Client, error) {
 	return &Client{cfg: s.slow, rw: s.db, ro: s.db, dialect: "sqlite"}, nil
 }
 
+// Dialect returns sqlite.
 func (s *SQLiteClient) Dialect() string { return "sqlite" }
-func (s *SQLiteClient) DB() *sql.DB     { return s.db }
+
+// DB returns the underlying SQLite database pool.
+func (s *SQLiteClient) DB() *sql.DB { return s.db }
+
+// PingContext verifies SQLite connectivity.
 func (s *SQLiteClient) PingContext(ctx context.Context) error {
 	return ClassifyError(s.db.PingContext(ctx))
 }
-func (s *SQLiteClient) Close() error       { return s.db.Close() }
+
+// Close releases the SQLite database pool.
+func (s *SQLiteClient) Close() error { return s.db.Close() }
+
+// Stats returns SQLite pool statistics.
 func (s *SQLiteClient) Stats() sql.DBStats { return s.db.Stats() }
 
 // Exec preserves the legacy error-only signature while executing real SQL.
@@ -241,6 +250,7 @@ func (s *SQLiteClient) Exec(ctx context.Context, query string, args ...any) erro
 	return err
 }
 
+// ExecContext executes a write statement and classifies failures.
 func (s *SQLiteClient) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	start := time.Now()
 	result, err := s.db.ExecContext(ctx, query, args...)
@@ -251,6 +261,7 @@ func (s *SQLiteClient) ExecContext(ctx context.Context, query string, args ...an
 	return result, nil
 }
 
+// QueryContext executes a query and classifies startup failures.
 func (s *SQLiteClient) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -259,10 +270,12 @@ func (s *SQLiteClient) QueryContext(ctx context.Context, query string, args ...a
 	return rows, nil
 }
 
+// QueryRowContext returns one SQLite query row.
 func (s *SQLiteClient) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return s.db.QueryRowContext(ctx, query, args...)
 }
 
+// BeginTx begins a SQLite transaction.
 func (s *SQLiteClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	tx, err := s.db.BeginTx(ctx, opts)
 	if err != nil {
@@ -271,6 +284,7 @@ func (s *SQLiteClient) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.T
 	return tx, nil
 }
 
+// InTx commits fn on success and rolls back on failure.
 func (s *SQLiteClient) InTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	if fn == nil {
 		return errors.New("dbcore/sqlite: transaction callback is nil")

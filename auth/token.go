@@ -91,6 +91,7 @@ type tokenClaimsWire struct {
 	JWTID      string            `json:"jti"`
 }
 
+// MarshalJSON encodes numeric and opaque user identities without ambiguity.
 func (claims TokenClaims) MarshalJSON() ([]byte, error) {
 	var userID json.RawMessage
 	if claims.UserIDString != "" {
@@ -109,6 +110,7 @@ func (claims TokenClaims) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON strictly decodes token claims and preserves identity shape.
 func (claims *TokenClaims) UnmarshalJSON(data []byte) error {
 	var wire tokenClaimsWire
 	if err := strictJSON(data, &wire); err != nil {
@@ -154,6 +156,7 @@ func newLegacyV1TokenVerifier(config LegacyTokenConfig, now func() time.Time) (*
 	return &legacyV1TokenVerifier{key: append([]byte(nil), config.SigningKey...), maxTTL: config.MaxTTL, now: now}, nil
 }
 
+// VerifyToken verifies the signed legacy v1 token representation.
 func (verifier *legacyV1TokenVerifier) VerifyToken(ctx context.Context, token string) (UserClaims, error) {
 	if err := ctx.Err(); err != nil {
 		return UserClaims{}, err
@@ -213,6 +216,7 @@ type TokenManager struct {
 	compatibility []tokenCompatibility
 }
 
+// NewTokenManager validates and copies immutable signing and compatibility policy.
 func NewTokenManager(config TokenConfig) (*TokenManager, error) {
 	if config.Issuer == "" || config.Audience == "" || config.ActiveKeyID == "" {
 		return nil, errors.New("auth: issuer, audience, and active key ID are required")
@@ -537,6 +541,8 @@ func AuthenticateWithManager(manager *TokenManager) gpp.HandlerFunc {
 	}
 }
 
+// UniversalAuth accepts a valid process-local session or compatibility JWT.
+// New applications should prefer UniversalAuthWithManager.
 func UniversalAuth(secret string, sessions *RedisSessionManager) gpp.HandlerFunc {
 	manager, _ := defaultTokenManager(secret)
 	return UniversalAuthWithManager(manager, sessions)
@@ -588,19 +594,10 @@ func bearerToken(c *gpp.Context) (string, bool) {
 		return "", false
 	}
 	token := header[len("Bearer "):]
-	if strings.IndexAny(token, " \t\r\n") >= 0 {
+	if strings.ContainsAny(token, " \t\r\n") {
 		return "", false
 	}
 	return token, true
-}
-
-func parsePositiveUserID(value string) (int64, error) {
-	value = strings.TrimPrefix(value, "usr_")
-	userID, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || userID <= 0 {
-		return 0, errors.New("auth: user ID must be positive")
-	}
-	return userID, nil
 }
 
 func randomTokenIdentifier() (string, error) {

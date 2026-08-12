@@ -1,5 +1,3 @@
-// Package i18n provides language negotiation, translation catalogs, plural
-// rules, and locale-aware formatting for goplusplus applications.
 package i18n
 
 import (
@@ -23,16 +21,21 @@ const (
 )
 
 var (
+	// ErrInvalidLanguage indicates a malformed or unsupported language tag.
 	ErrInvalidLanguage = errors.New("i18n: invalid language tag")
-	ErrMissingPlural   = errors.New("i18n: plural forms require an other form")
-	ErrInvalidPlural   = errors.New("i18n: invalid plural forms for language")
+	// ErrMissingPlural indicates that the required other plural form is absent.
+	ErrMissingPlural = errors.New("i18n: plural forms require an other form")
+	// ErrInvalidPlural indicates plural categories unsupported by a language.
+	ErrInvalidPlural = errors.New("i18n: invalid plural forms for language")
 )
 
 // Direction is the natural writing direction of a locale.
 type Direction string
 
 const (
+	// LeftToRight identifies left-to-right presentation.
 	LeftToRight Direction = "ltr"
+	// RightToLeft identifies right-to-left presentation.
 	RightToLeft Direction = "rtl"
 )
 

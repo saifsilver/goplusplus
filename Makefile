@@ -1,4 +1,4 @@
-.PHONY: build test coverage format-check lint security verify install-tools install-hooks bench load-test fmt tag clean help
+.PHONY: build test coverage format-check lint static-analysis docs-check race fuzz-smoke api-compat benchmark-gate security verify install-tools install-hooks bench load-test fmt tag clean help
 
 APP_NAME := goplusplus
 CACHE_DIR := $(CURDIR)/.cache
@@ -9,7 +9,12 @@ COVERAGE_CLEAN_FILE := $(TMP_DIR)/coverage.clean.out
 COVERAGE_MIN ?= 55.0
 GOVULNCHECK_VERSION := v1.6.0
 GOVULNCHECK := $(TOOLS_DIR)/govulncheck
+STATICCHECK_VERSION := 2025.1.1
+STATICCHECK := $(TOOLS_DIR)/staticcheck
+APIDIFF_VERSION := v0.0.0-20260811152304-ee035b5b010f
+APIDIFF := $(TOOLS_DIR)/apidiff
 GO_ENV := GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR) CGO_ENABLED=0
+RACE_ENV := GOCACHE=$(CACHE_DIR) GOTMPDIR=$(TMP_DIR) TMPDIR=$(TMP_DIR)
 
 # Release tagging: `make tag` bumps the patch version, verifies the version
 # update, commits it, and creates an annotated tag. Set VERSION for another release.
@@ -71,6 +76,34 @@ lint: ## Run go vet code analysis
 	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
 	$(GO_ENV) go vet ./...
 
+static-analysis: ## Run pinned Staticcheck analysis
+	@echo "🔍 Running Staticcheck..."
+	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
+	@test -x $(STATICCHECK) || { echo "❌ staticcheck is missing; run 'make install-tools'"; exit 1; }
+	STATICCHECK_CACHE=$(CACHE_DIR)/staticcheck $(GO_ENV) $(STATICCHECK) ./...
+
+docs-check: ## Require package and exported API documentation
+	@echo "📚 Checking Go documentation coverage..."
+	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
+	$(GO_ENV) go run ./cmd/doccheck .
+
+race: ## Run the full test suite with the race detector
+	@echo "🏁 Running race-detector suite..."
+	@mkdir -p $(CACHE_DIR) $(TMP_DIR)
+	$(RACE_ENV) go test -race -count=1 ./...
+
+fuzz-smoke: ## Exercise every fuzz target briefly
+	@echo "🧬 Running fuzz smoke suite..."
+	@sh scripts/fuzz_smoke.sh
+
+api-compat: ## Reject unreviewed breaking API changes since v1.11.5
+	@echo "🧩 Checking public API compatibility..."
+	@sh scripts/check_api_compat.sh
+
+benchmark-gate: ## Enforce router allocation budgets
+	@echo "⚡ Checking benchmark allocation budgets..."
+	@sh scripts/benchmark_gate.sh
+
 security: ## Verify modules and scan reachable code for known vulnerabilities
 	@echo "🔐 Verifying modules and scanning vulnerabilities..."
 	go mod verify
@@ -78,12 +111,14 @@ security: ## Verify modules and scan reachable code for known vulnerabilities
 	$(GO_ENV) $(GOVULNCHECK) ./...
 	@echo "✅ Security checks passed!"
 
-verify: format-check lint coverage security ## Run the complete local/CI quality gate
+verify: format-check lint static-analysis docs-check coverage race fuzz-smoke api-compat benchmark-gate security ## Run the complete local/CI quality gate
 	@echo "✅ Quality gate passed!"
 
 install-tools: ## Install pinned development and security tools locally
 	@mkdir -p $(TOOLS_DIR)
 	GOBIN=$(TOOLS_DIR) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	GOBIN=$(TOOLS_DIR) go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	GOBIN=$(TOOLS_DIR) go install golang.org/x/exp/cmd/apidiff@$(APIDIFF_VERSION)
 
 install-hooks: install-tools ## Enable the tracked Git pre-push hook for this clone
 	git config core.hooksPath .githooks

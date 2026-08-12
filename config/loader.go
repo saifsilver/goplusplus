@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// LoaderOptions selects explicit environment values and an optional dotenv file.
 type LoaderOptions struct {
 	Environment    map[string]string
 	DotEnvPath     string
@@ -48,6 +49,7 @@ func LoadValue[T any](loader *Loader, normalize func(*T) error, validate func(T)
 	return value, nil
 }
 
+// NewLoader constructs an immutable loader; environment values override dotenv values.
 func NewLoader(options LoaderOptions) (*Loader, error) {
 	fileValues := map[string]string{}
 	if options.DotEnvPath != "" {
@@ -74,6 +76,7 @@ func NewLoader(options LoaderOptions) (*Loader, error) {
 	return &Loader{values: values}, nil
 }
 
+// Load populates target, then runs optional normalization and validation callbacks.
 func (loader *Loader) Load(target any, normalize func() error, validate func() error) error {
 	if loader == nil {
 		return errors.New("config: loader is nil")
@@ -243,6 +246,7 @@ func setConfigValue(field reflect.Value, raw string) error {
 	return nil
 }
 
+// Required rejects an empty or whitespace-only configuration value.
 func Required(field, value string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("field %q is required", field)
@@ -250,6 +254,7 @@ func Required(field, value string) error {
 	return nil
 }
 
+// StringLength validates a configuration string using Unicode code-point length.
 func StringLength(field, value string, minimum, maximum int) error {
 	if minimum < 0 || maximum < minimum {
 		return fmt.Errorf("field %q has invalid length bounds", field)
@@ -261,6 +266,7 @@ func StringLength(field, value string, minimum, maximum int) error {
 	return nil
 }
 
+// IntRange validates an integer against inclusive bounds.
 func IntRange(field string, value, minimum, maximum int64) error {
 	if maximum < minimum || value < minimum || value > maximum {
 		return fmt.Errorf("field %q must be between %d and %d", field, minimum, maximum)
@@ -268,6 +274,7 @@ func IntRange(field string, value, minimum, maximum int64) error {
 	return nil
 }
 
+// OneOf validates that value exactly matches an allowed string.
 func OneOf(field, value string, allowed ...string) error {
 	for _, candidate := range allowed {
 		if value == candidate {
@@ -277,4 +284,5 @@ func OneOf(field, value string, allowed ...string) error {
 	return fmt.Errorf("field %q is not an allowed value", field)
 }
 
+// Port validates an integer TCP or UDP port number.
 func Port(field string, value int) error { return IntRange(field, int64(value), 1, 65535) }

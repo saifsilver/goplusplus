@@ -8,6 +8,7 @@ import (
 	"github.com/saifsilver/goplusplus"
 )
 
+// DeprecationInfo describes the announced sunset date for an API version.
 type DeprecationInfo struct {
 	SunsetDate string
 }

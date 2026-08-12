@@ -20,6 +20,7 @@ const (
 	defaultESQueryLimit    = 4 << 10
 )
 
+// ErrElasticsearchNotConfigured is returned when a zero-value client is used.
 var ErrElasticsearchNotConfigured = errors.New("search: Elasticsearch provider is not configured")
 
 // ESConfig holds Elasticsearch cluster configuration. HTTPS is required unless

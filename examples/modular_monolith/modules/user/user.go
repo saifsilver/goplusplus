@@ -1,3 +1,4 @@
+// Package user demonstrates a self-contained modular-monolith user domain.
 package user
 
 import (

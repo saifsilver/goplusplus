@@ -1,0 +1,17 @@
+- ./cache.(*BoundedMemoryStore).Get: changed from func(context.Context, string) (any, bool) to func(context.Context, string) (any, bool, error)
+- ./cache.(*MemoryStore).Get: changed from func(context.Context, string) (any, bool) to func(context.Context, string) (any, bool, error)
+- ./cache.(*MultiLevelStore).Get: changed from func(context.Context, string) (any, bool) to func(context.Context, string) (any, bool, error)
+- ./cache.MultiLevelStore: old is comparable, new is not
+- ./cache.NewRedisClient: changed from func(string) *RedisStore to func(context.Context, string) (*RedisStore, error)
+- ./cache.NewRedisStore: changed from func(string) *RedisStore to func(context.Context, RedisConfig) (*RedisStore, error)
+- ./cache.RedisStore.MemoryStore: removed
+- ./cache.Store.Get: changed from func(context.Context, string) (any, bool) to func(context.Context, string) (any, bool, error)
+- ./middleware.IdempotencyConfig: old is comparable, new is not
+- ./middleware.Singleflight: changed from func() github.com/saifsilver/goplusplus.HandlerFunc to func(...SingleflightConfig) github.com/saifsilver/goplusplus.HandlerFunc
+- ./pubsub.NewRabbitMQBus: changed from func(string) *RabbitMQBus to func(context.Context, RabbitMQConfig) (*RabbitMQBus, error)
+- ./pubsub.NewRedisBus: changed from func(string) *RedisBus to func(context.Context, RedisConfig) (*RedisBus, error)
+- ./search.NewElasticsearchClient: changed from func(ESConfig) *ESClient to func(context.Context, ESConfig) (*ESClient, error)
+- ./storage.NewS3Client: changed from func(S3Config) *S3Client to func(context.Context, S3Config) (*S3Client, error)
+- ./storage.S3Config.AccessKeyID: removed
+- ./storage.S3Config.SecretAccessKey: removed
+- Version: value changed from "v1.11.5" to "v1.11.6"

@@ -14,6 +14,7 @@ type responseWriterInterceptor struct {
 	statusCode int
 }
 
+// WriteHeader records and delegates the response status for logging.
 func (rw *responseWriterInterceptor) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)

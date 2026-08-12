@@ -1,6 +1,9 @@
 # `goplusplus` Framework Guide for AI Coding Agents (Codex, Claude, Cursor, Copilot)
 
-This document provides system instructions, architectural rules, and API specifications for AI coding agents to instantly generate production-ready Go applications using `goplusplus` (`github.com/saifsilver/goplusplus`).
+This document provides architectural rules and API specifications for coding
+agents working with `goplusplus` (`github.com/saifsilver/goplusplus`). Generated
+changes require normal engineering review and verification; this guide is not a
+production-readiness guarantee.
 
 ---
 

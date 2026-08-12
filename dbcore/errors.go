@@ -9,16 +9,24 @@ import (
 	modernsqlite "modernc.org/sqlite"
 )
 
+// ErrorKind is a stable category for database failures.
 type ErrorKind string
 
 const (
-	ErrorUniqueConstraint     ErrorKind = "unique_constraint"
+	// ErrorUniqueConstraint indicates a uniqueness violation.
+	ErrorUniqueConstraint ErrorKind = "unique_constraint"
+	// ErrorForeignKeyConstraint indicates a foreign-key violation.
 	ErrorForeignKeyConstraint ErrorKind = "foreign_key_constraint"
-	ErrorNotNullConstraint    ErrorKind = "not_null_constraint"
-	ErrorCheckConstraint      ErrorKind = "check_constraint"
-	ErrorBusy                 ErrorKind = "busy_or_locked"
-	ErrorCanceled             ErrorKind = "query_canceled"
-	ErrorUnknown              ErrorKind = "unknown"
+	// ErrorNotNullConstraint indicates a required-column violation.
+	ErrorNotNullConstraint ErrorKind = "not_null_constraint"
+	// ErrorCheckConstraint indicates a check-constraint violation.
+	ErrorCheckConstraint ErrorKind = "check_constraint"
+	// ErrorBusy indicates database lock or busy contention.
+	ErrorBusy ErrorKind = "busy_or_locked"
+	// ErrorCanceled indicates cancellation or deadline expiry.
+	ErrorCanceled ErrorKind = "query_canceled"
+	// ErrorUnknown indicates an unclassified database failure.
+	ErrorUnknown ErrorKind = "unknown"
 )
 
 // DatabaseError provides a stable category while retaining the driver error.
@@ -27,9 +35,13 @@ type DatabaseError struct {
 	cause error
 }
 
+// Error returns the stable database error message.
 func (e *DatabaseError) Error() string { return "database operation failed: " + string(e.Kind) }
+
+// Unwrap returns the driver or standard-library cause.
 func (e *DatabaseError) Unwrap() error { return e.cause }
 
+// IsErrorKind reports whether err contains a DatabaseError with kind.
 func IsErrorKind(err error, kind ErrorKind) bool {
 	var databaseErr *DatabaseError
 	return errors.As(err, &databaseErr) && databaseErr.Kind == kind

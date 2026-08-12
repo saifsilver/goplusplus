@@ -1,35 +1,41 @@
 # `goplusplus` (`gpp`)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/saifsilver/goplusplus.svg)](https://pkg.go.dev/github.com/saifsilver/goplusplus)
-[![Go Version](https://img.shields.io/badge/go-1.21%2B-00ADD8.svg)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](https://go.dev/)
 [![Version](https://img.shields.io/github/v/tag/saifsilver/goplusplus?color=blue&label=version)](https://github.com/saifsilver/goplusplus/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-`goplusplus` (`gpp`) is an **ultra-fast, secure, and hyper-scalable Go framework** engineered for building modern REST APIs, modular monoliths, and distributed microservices. Designed around a **90% Business Logic, 10% Infrastructure Code** philosophy, `goplusplus` reduces standard Go handler boilerplate by over 90% while keeping the learning curve under **4 hours**.
+`goplusplus` (`gpp`) is a security-conscious Go framework for REST APIs,
+modular monoliths, and services. It aims to keep infrastructure code small while
+retaining explicit production boundaries. Capability maturity is documented in
+[`docs/readiness.md`](docs/readiness.md).
 
 ---
 
-## 🎯 Developer Philosophy: 90% Business Logic, 10% Code
+## 🎯 Developer Philosophy: Small Infrastructure Surface
 
-With `goplusplus`, developers focus **exclusively on domain business logic and infrastructure configuration**. The framework efficiently handles routing, data binding, validation, security, observability, multi-protocol generation, database pooling, and fault tolerance out-of-the-box:
+`goplusplus` provides composable routing, binding, validation, security,
+observability, protocol, database, and resilience components. Applications still
+own their domain logic, deployment configuration, threat model, and operational
+validation:
 
-| Category | What Developer Writes | What `goplusplus` Handles Automatically |
+| Category | Application integration | Framework capability |
 | :--- | :--- | :--- |
-| **Routing** | `app.GET("/users/:id", handler)` | Zero-allocation Radix tree matching, path parameter parsing (`c.Param`), wildcard matching, and context recycling (`sync.Pool`). |
+| **Routing** | `app.GET("/users/:id", handler)` | Radix tree matching, path parameters (`c.Param`), wildcards, and context recycling (`sync.Pool`). |
 | **Data Binding** | `c.BindAndValidate(&struct)` | Decodes JSON body, applies built-in validation tags, and returns RFC 7807 problem details automatically on error. |
 | **Security** | `app.Use(middleware.Security())` | OWASP Security Headers (HSTS, CSP, XSS), CORS preflight, Token Bucket Rate Limiting, Panic Recovery, and Request Execution Timeouts. |
 | **Protocol Docs** | `app.AutoSwaggerUI()` | Dynamic OpenAPI 3.0 spec generation, Swagger UI dashboard (`/swagger`), GraphQL Playground (`/graphql`), and gRPC HTTP/2 multiplexing. |
 | **Database** | `db.Query(ctx, ...)` | PgBouncer transaction mode, primary/replica routing (`RW`/`RO`), Read-Your-Own-Writes consistency, and **Slow Query Advisor** (SQL fingerprinting & suggestions). |
 | **Observability** | `middleware.Observability()` | Prometheus `/metrics` counters, OpenTelemetry `X-Trace-ID` distributed tracing, and `slog` structured logs. |
-| **Resilience** | `cb.Execute(...)` | Hystrix Circuit Breakers, Adaptive Concurrency Limiters (Little's Law), and Saga Distributed Transaction Coordinators with auto-compensation. |
-| **Frontend SPA** | `app.StaticEmbed("/", webFS)` | Serves embedded React/Vite/Next.js assets with automatic client-side SPA `index.html` fallback routing in 1 line. |
+| **Resilience** | `cb.Execute(...)` | Circuit breakers, adaptive concurrency limiting, and process-local saga compensation. |
+| **Frontend SPA** | `app.StaticEmbed("/", webFS)` | Serves embedded static assets with an SPA `index.html` fallback. |
 
 ---
 
 ## 📦 Installation
 
 ```bash
-go get github.com/saifsilver/goplusplus@v1.11.0
+go get github.com/saifsilver/goplusplus@v1.11.5
 ```
 
 ---
@@ -72,7 +78,7 @@ func main() {
 
 ## 🏛️ Master Feature Catalog
 
-### 1. ⚡ Zero-Allocation Radix Router & Context Pooling
+### 1. ⚡ Radix Router & Context Pooling
 High-performance HTTP routing supporting static paths, named parameters (`:id`), and wildcards (`*path`):
 
 ```go
@@ -265,8 +271,9 @@ err = db.InTx(reqCtx, func(tx *sql.Tx) error {
 
 ---
 
-### 8. 🛡️ Hyper-Scale Resilience Suite (Circuit Breaker & Adaptive Limiter)
-Protect downstream services from cascading failure and sudden 100x traffic spikes:
+### 8. 🛡️ Resilience Suite (Circuit Breaker & Adaptive Limiter)
+Protect downstream services from cascading failures and traffic spikes when the
+application supplies appropriate limits and failure policies:
 
 ```go
 // 1. Circuit Breaker
@@ -285,8 +292,9 @@ app.Use(resilience.NewAdaptiveLimiter(1000).Middleware())
 
 ---
 
-### 9. 🔄 Saga Distributed Transactions (`saga`)
-Manage multi-microservice transactions with **automatic reverse compensation** on step failures:
+### 9. 🔄 Process-Local Saga Coordination (`saga`)
+Coordinate in-process steps with reverse compensation on failure. This helper is
+not durable and does not replace a workflow engine for distributed production work:
 
 ```go
 sagaCoord := saga.NewCoordinator()
@@ -306,9 +314,11 @@ err := sagaCoord.Execute(ctx)
 
 ---
 
-## ⚡ Persistent Background Task Tracker & Auto-Retry Engine (`queue`)
+## ⚡ Process-Local Background Task Tracker (`queue`)
 
-Dispatch tracked background tasks with automatic retries on failure and full status visibility:
+Dispatch best-effort background tasks with automatic retries and process-local
+status visibility. Use Kafka, RabbitMQ, or another durable queue when work must
+survive restarts:
 
 ```go
 // 1. Dispatch tracked background task (returns task ID)
@@ -721,8 +731,10 @@ app.Use(vm.Middleware())
 
 ---
 
-### 12. 🩺 Kubernetes Health Probes & Security Audit Logger
-Kubernetes `/healthz/liveness` & `/healthz/readiness` probes and tamper-evident SOC2 audit logging:
+### 12. 🩺 Kubernetes Health Probes & Structured Audit Events
+Kubernetes `/healthz/liveness` and `/healthz/readiness` probes plus structured
+audit events. Tamper evidence, durable retention, and compliance controls must
+be provided by the configured audit pipeline:
 
 ```go
 healthChecker := health.NewChecker()
@@ -808,7 +820,7 @@ app.GET("/api/v1/feed", func(c *gpp.Context) error {
 
 ---
 
-## Production database and request infrastructure (v1.12)
+## Unreleased database and request infrastructure
 
 SQLite and PostgreSQL now use real `database/sql` connections. Open SQLite with
 `dbcore.OpenSQLite(ctx, dbcore.SQLiteConfig{...})`; open PostgreSQL primary and
@@ -817,7 +829,7 @@ Neither adapter silently falls back to an in-memory database. Migration history
 is transactional and checksum-verified, and common SQLite/PostgreSQL constraint
 failures have stable `dbcore.ErrorKind` classifications.
 
-The release also adds causal `gpp.NewInternalError`, the explicit
+The unreleased development branch also adds causal `gpp.NewInternalError`, the explicit
 `BindNormalizeAndValidate` request pipeline, strict typed parameters,
 `PaginationPolicy`, isolated `config.Loader`, redacted bounded readiness checks,
 typed `gpptest` response helpers, and an application-credential-neutral
@@ -828,7 +840,9 @@ adoption examples and compatibility details.
 
 ## 🤖 AI Agent Integration Guide (`AGENTS.md`)
 
-`goplusplus` includes a dedicated **[AGENTS.md](AGENTS.md)** specification file designed for AI coding assistants (Codex, Claude, Cursor, Copilot, ChatGPT). AI agents reading `AGENTS.md` can instantly generate 100% correct, production-grade `goplusplus` code.
+`goplusplus` includes an **[AGENTS.md](AGENTS.md)** guide for coding assistants.
+Generated changes remain subject to the same review, testing, security, and
+readiness requirements as human-authored changes.
 
 ---
 

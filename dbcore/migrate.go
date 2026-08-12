@@ -17,6 +17,7 @@ import (
 	"time"
 )
 
+// Migration is one immutable, checksummed schema transition.
 type Migration struct {
 	ID      string
 	Version int
@@ -182,10 +183,12 @@ func loadAppliedMigrations(ctx context.Context, tx *sql.Tx) (map[string]string, 
 	return applied, nil
 }
 
+// Migrate applies validated migrations in version order.
 func Migrate(ctx context.Context, database MigrationDatabase, migrations []Migration) error {
 	return AutoMigrate(ctx, database, migrations...)
 }
 
+// MigrateEmbed loads versioned SQL files from embedFS and applies them in order.
 func MigrateEmbed(ctx context.Context, database MigrationDatabase, embedFS fs.FS, dir string) error {
 	entries, err := fs.ReadDir(embedFS, dir)
 	if err != nil {

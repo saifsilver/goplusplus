@@ -26,8 +26,10 @@ const (
 	maxS3PresignExpiry      = 7 * 24 * time.Hour
 )
 
+// ErrS3NotConfigured indicates an uninitialized S3 client.
 var ErrS3NotConfigured = errors.New("storage: S3 provider is not configured")
 
+// S3Config defines bucket, endpoint, encryption, retry, and capacity policy.
 type S3Config struct {
 	Bucket            string
 	Region            string
@@ -54,6 +56,7 @@ type S3Client struct {
 	presigner *awss3.PresignClient
 }
 
+// NewS3Client validates configuration and loads the AWS credential chain.
 func NewS3Client(ctx context.Context, config S3Config) (*S3Client, error) {
 	config, err := normalizeS3Config(config)
 	if err != nil {
@@ -78,6 +81,7 @@ func NewS3Client(ctx context.Context, config S3Config) (*S3Client, error) {
 	return &S3Client{cfg: config, client: client, presigner: awss3.NewPresignClient(client)}, nil
 }
 
+// Upload stores one bounded encrypted object with a SHA-256 checksum.
 func (client *S3Client) Upload(ctx context.Context, key string, data []byte, contentType string) (string, error) {
 	if client == nil || client.client == nil {
 		return "", ErrS3NotConfigured
@@ -114,6 +118,7 @@ func (client *S3Client) Upload(ctx context.Context, key string, data []byte, con
 	return client.objectURL(fullKey)
 }
 
+// GetPresignedURL returns a bounded-lifetime private object download URL.
 func (client *S3Client) GetPresignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	if client == nil || client.presigner == nil {
 		return "", ErrS3NotConfigured

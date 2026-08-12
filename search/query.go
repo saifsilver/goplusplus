@@ -14,63 +14,99 @@ import (
 )
 
 const (
-	DefaultLimit      = 20
-	MaxLimit          = 100
-	MaxFilters        = 20
-	MaxFacets         = 10
-	MaxFacetBuckets   = 100
-	MaxQueryLength    = 512
+	// DefaultLimit is the page size used when a request omits a limit.
+	DefaultLimit = 20
+	// MaxLimit is the largest accepted search page size.
+	MaxLimit = 100
+	// MaxFilters is the maximum number of filters in one request.
+	MaxFilters = 20
+	// MaxFacets is the maximum number of facet requests in one search.
+	MaxFacets = 10
+	// MaxFacetBuckets is the upper bound for buckets returned by one facet.
+	MaxFacetBuckets = 100
+	// MaxQueryLength is the maximum keyword-query length in bytes.
+	MaxQueryLength = 512
+	// DefaultFacetLimit is the bucket count used when a facet omits a limit.
 	DefaultFacetLimit = 20
 )
 
+// AttributeType identifies the scalar representation of a searchable attribute.
 type AttributeType string
 
 const (
-	AttributeString  AttributeType = "string"
+	// AttributeString represents textual values.
+	AttributeString AttributeType = "string"
+	// AttributeInteger represents integral numeric values.
 	AttributeInteger AttributeType = "integer"
+	// AttributeDecimal represents numeric values that may have a fractional part.
 	AttributeDecimal AttributeType = "decimal"
+	// AttributeBoolean represents boolean values.
 	AttributeBoolean AttributeType = "boolean"
-	AttributeDate    AttributeType = "date"
-	AttributeEnum    AttributeType = "enum"
+	// AttributeDate represents date or time values.
+	AttributeDate AttributeType = "date"
+	// AttributeEnum represents a value drawn from a declared set.
+	AttributeEnum AttributeType = "enum"
 )
 
+// Operator identifies a filter comparison operation.
 type Operator string
 
 const (
-	OperatorEqual       Operator = "eq"
-	OperatorNotEqual    Operator = "neq"
-	OperatorIn          Operator = "in"
-	OperatorNotIn       Operator = "not_in"
+	// OperatorEqual matches equal values.
+	OperatorEqual Operator = "eq"
+	// OperatorNotEqual matches non-equal values.
+	OperatorNotEqual Operator = "neq"
+	// OperatorIn matches any value in a supplied set.
+	OperatorIn Operator = "in"
+	// OperatorNotIn excludes values in a supplied set.
+	OperatorNotIn Operator = "not_in"
+	// OperatorGreaterThan matches values greater than the operand.
 	OperatorGreaterThan Operator = "gt"
+	// OperatorGreaterOrEq matches values greater than or equal to the operand.
 	OperatorGreaterOrEq Operator = "gte"
-	OperatorLessThan    Operator = "lt"
-	OperatorLessOrEq    Operator = "lte"
-	OperatorBetween     Operator = "between"
-	OperatorContains    Operator = "contains"
-	OperatorExists      Operator = "exists"
+	// OperatorLessThan matches values less than the operand.
+	OperatorLessThan Operator = "lt"
+	// OperatorLessOrEq matches values less than or equal to the operand.
+	OperatorLessOrEq Operator = "lte"
+	// OperatorBetween matches values within an inclusive range.
+	OperatorBetween Operator = "between"
+	// OperatorContains performs a case-insensitive substring match.
+	OperatorContains Operator = "contains"
+	// OperatorExists tests whether the attribute is present.
+	OperatorExists Operator = "exists"
 )
 
+// SortDirection specifies ascending or descending result order.
 type SortDirection string
 
 const (
-	SortAscending  SortDirection = "asc"
+	// SortAscending orders smaller values first.
+	SortAscending SortDirection = "asc"
+	// SortDescending orders larger values first.
 	SortDescending SortDirection = "desc"
 )
 
+// FacetMode controls whether a facet excludes its own filters.
 type FacetMode string
 
 const (
+	// FacetDisjunctive excludes filters on the faceted field when counting buckets.
 	FacetDisjunctive FacetMode = "disjunctive"
+	// FacetConjunctive applies all filters when counting buckets.
 	FacetConjunctive FacetMode = "conjunctive"
 )
 
+// FacetSort selects how facet buckets are ordered.
 type FacetSort string
 
 const (
+	// FacetSortCount orders buckets by descending document count.
 	FacetSortCount FacetSort = "count"
+	// FacetSortValue orders buckets by value.
 	FacetSortValue FacetSort = "value"
 )
 
+// AttributeDefinition declares validation and search capabilities for one attribute.
 type AttributeDefinition struct {
 	Key        string        `json:"key"`
 	Type       AttributeType `json:"type"`
@@ -82,11 +118,13 @@ type AttributeDefinition struct {
 	EnumValues []string      `json:"enum_values,omitempty"`
 }
 
+// Schema defines the accepted attributes for a search resource.
 type Schema struct {
 	Attributes   map[string]AttributeDefinition `json:"attributes"`
 	AllowUnknown bool                           `json:"allow_unknown,omitempty"`
 }
 
+// Filter constrains results by comparing an attribute with a value.
 type Filter struct {
 	Field     string   `json:"field"`
 	Operator  Operator `json:"operator"`
@@ -94,6 +132,7 @@ type Filter struct {
 	mandatory bool
 }
 
+// FacetRequest asks the backend to aggregate values for an attribute.
 type FacetRequest struct {
 	Field          string    `json:"field"`
 	Mode           FacetMode `json:"mode,omitempty"`
@@ -102,11 +141,13 @@ type FacetRequest struct {
 	IncludeMissing bool      `json:"include_missing,omitempty"`
 }
 
+// Sort defines one ordered result field.
 type Sort struct {
 	Field     string        `json:"field"`
 	Direction SortDirection `json:"direction,omitempty"`
 }
 
+// SearchRequest contains a validated keyword, filter, facet, sort, and page request.
 type SearchRequest struct {
 	Query   string         `json:"query,omitempty"`
 	Filters []Filter       `json:"filters,omitempty"`
@@ -116,27 +157,32 @@ type SearchRequest struct {
 	Limit   int            `json:"limit,omitempty"`
 }
 
+// Document is a resource record stored by a search backend.
 type Document struct {
 	ID         string         `json:"id"`
 	Attributes map[string]any `json:"attributes"`
 }
 
+// Hit is a matched search document and its relevance score.
 type Hit struct {
 	ID         string         `json:"id"`
 	Score      float64        `json:"score,omitempty"`
 	Attributes map[string]any `json:"attributes"`
 }
 
+// FacetBucket contains one aggregated value and document count.
 type FacetBucket struct {
 	Value any   `json:"value"`
 	Count int64 `json:"count"`
 }
 
+// FacetResult contains the buckets computed for one attribute.
 type FacetResult struct {
 	Field   string        `json:"field"`
 	Buckets []FacetBucket `json:"buckets"`
 }
 
+// SearchResult is the backend-independent response returned for a search request.
 type SearchResult struct {
 	Items      []Hit                  `json:"items"`
 	Total      int64                  `json:"total"`
@@ -147,6 +193,7 @@ type SearchResult struct {
 
 var attributeKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,127}$`)
 
+// NewSchema validates definitions and creates a schema keyed by attribute name.
 func NewSchema(definitions ...AttributeDefinition) (Schema, error) {
 	schema := Schema{Attributes: make(map[string]AttributeDefinition, len(definitions))}
 	for _, definition := range definitions {
@@ -189,6 +236,7 @@ func validAttributeType(attributeType AttributeType) bool {
 	}
 }
 
+// ValidateDocument verifies an ID and every supplied attribute against the schema.
 func (s Schema) ValidateDocument(document Document) error {
 	if strings.TrimSpace(document.ID) == "" {
 		return errors.New("search: document ID is required")
@@ -253,6 +301,7 @@ func validateScalar(definition AttributeDefinition, value any) error {
 	return nil
 }
 
+// NormalizeRequest validates a request and applies documented default limits and modes.
 func (s Schema) NormalizeRequest(request SearchRequest) (SearchRequest, error) {
 	request.Filters = append([]Filter(nil), request.Filters...)
 	request.Facets = append([]FacetRequest(nil), request.Facets...)

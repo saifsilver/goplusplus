@@ -59,7 +59,7 @@ func BenchmarkRouterParallel(b *testing.B) {
 	})
 }
 
-func BenchmarkZeroAllocEndpoint(b *testing.B) {
+func BenchmarkMinimalAllocEndpoint(b *testing.B) {
 	app := New()
 	payload := []byte(`{"status":"ok"}`)
 	app.GET("/api/v1/bench/:id", func(c *Context) error {

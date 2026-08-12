@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// BoundedConfig defines the maximum number of process-local cache entries.
 type BoundedConfig struct {
 	MaxEntries int
 }
@@ -39,6 +40,7 @@ func NewBoundedMemoryStore(maxEntries int) *BoundedMemoryStore {
 	}
 }
 
+// Set stores a value and evicts one entry when capacity is reached.
 func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,6 +64,7 @@ func (s *BoundedMemoryStore) Set(ctx context.Context, key string, val any, ttl t
 	return nil
 }
 
+// Get returns a live cached value when present.
 func (s *BoundedMemoryStore) Get(ctx context.Context, key string) (any, bool, error) {
 	value, found, _, err := s.getWithTTL(ctx, key)
 	return value, found, err
@@ -84,6 +87,7 @@ func (s *BoundedMemoryStore) getWithTTL(ctx context.Context, key string) (any, b
 	return entry.item.val, true, remaining, nil
 }
 
+// Delete removes key from the bounded memory store.
 func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,6 +95,7 @@ func (s *BoundedMemoryStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// GetOrSet coalesces concurrent misses and caches one fetched value.
 func (s *BoundedMemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
 	if val, ok, err := s.Get(ctx, key); err != nil {
 		return nil, err
@@ -117,6 +122,7 @@ func (s *BoundedMemoryStore) GetOrSet(ctx context.Context, key string, ttl time.
 	}
 }
 
+// InvalidatePrefix removes keys that begin with prefix.
 func (s *BoundedMemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

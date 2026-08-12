@@ -10,11 +10,15 @@ import (
 	"github.com/saifsilver/goplusplus"
 )
 
+// CircuitState identifies the current circuit-breaker state.
 type CircuitState int32
 
 const (
+	// StateClosed permits calls and records failures.
 	StateClosed CircuitState = iota
+	// StateHalfOpen permits a trial call after the reset timeout.
 	StateHalfOpen
+	// StateOpen rejects calls until the reset timeout elapses.
 	StateOpen
 )
 

@@ -49,3 +49,18 @@ func TestSagaCoordinatorSuccessAndCompensate(t *testing.T) {
 		t.Errorf("expected step 1 to be compensated in reverse order")
 	}
 }
+
+func TestSagaCoordinatorReturnsCompensationFailures(t *testing.T) {
+	executeErr := errors.New("charge declined")
+	compensationErr := errors.New("inventory release unavailable")
+	coordinator := saga.NewCoordinator()
+	coordinator.AddStep("reserve_inventory", func(context.Context) error { return nil }, func(context.Context) error {
+		return compensationErr
+	})
+	coordinator.AddStep("charge", func(context.Context) error { return executeErr }, nil)
+
+	err := coordinator.Execute(context.Background())
+	if !errors.Is(err, executeErr) || !errors.Is(err, compensationErr) {
+		t.Fatalf("Execute error = %v, want execution and compensation causes", err)
+	}
+}

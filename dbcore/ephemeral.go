@@ -6,10 +6,19 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
+)
+
+const (
+	defaultEphemeralTTL     = 10 * time.Minute
+	maxEphemeralSessions    = 10_000
+	maxEphemeralRows        = 100_000
+	maxEphemeralBytes       = 64 << 20
+	ephemeralCleanupTimeout = 5 * time.Second
 )
 
 // EphemeralSession holds metadata for a materialized pagination temporary table.
@@ -20,10 +29,17 @@ type EphemeralSession struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// EphemeralManager tracks bounded process-local materialization sessions.
 type EphemeralManager struct {
 	mu       sync.Mutex
 	sessions map[string]*EphemeralSession
 }
+
+// ErrEphemeralCapacity indicates that the process-local session bound was reached.
+var ErrEphemeralCapacity = errors.New("dbcore/ephemeral: session capacity reached")
+
+// ErrEphemeralResultTooLarge indicates that a materialization exceeded its memory safety bound.
+var ErrEphemeralResultTooLarge = errors.New("dbcore/ephemeral: materialized result is too large")
 
 var globalEphemeral = &EphemeralManager{
 	sessions: make(map[string]*EphemeralSession),
@@ -31,11 +47,20 @@ var globalEphemeral = &EphemeralManager{
 
 // MaterializePagination executes a query, creates a temporary session table gpp_tmp_page_<session_id>, populates it, and returns an EphemeralSession.
 func MaterializePagination(ctx context.Context, client *Client, query string, ttl time.Duration, args ...any) (*EphemeralSession, error) {
+	if client == nil {
+		return nil, errors.New("dbcore/ephemeral: database client is required")
+	}
 	if ttl <= 0 {
-		ttl = 10 * time.Minute
+		ttl = defaultEphemeralTTL
+	}
+	if !globalEphemeral.hasCapacity() {
+		return nil, ErrEphemeralCapacity
 	}
 
-	sessionID := generateSessionID()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		return nil, err
+	}
 	tableName := fmt.Sprintf("gpp_tmp_page_%s", sessionID)
 
 	createTableSQL := fmt.Sprintf(`
@@ -47,8 +72,15 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 	if _, err := client.Exec(ctx, createTableSQL); err != nil {
 		return nil, fmt.Errorf("dbcore/ephemeral: failed to create temporary result table: %w", err)
 	}
+	cleanupOnFailure := true
+	defer func() {
+		if cleanupOnFailure {
+			cleanupEphemeralTable(client, tableName, "")
+		}
+	}()
 
-	totalCount := 0
+	materializedRows := make([]string, 0)
+	materializedBytes := 0
 	if query != "" {
 		err := client.Query(ctx, query, func(rows *sql.Rows) error {
 			if rows == nil {
@@ -59,14 +91,13 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 				return err
 			}
 			for rows.Next() {
-				totalCount++
 				columnPointers := make([]any, len(cols))
 				columnValues := make([]any, len(cols))
 				for i := range cols {
 					columnPointers[i] = &columnValues[i]
 				}
 				if err := rows.Scan(columnPointers...); err != nil {
-					continue
+					return fmt.Errorf("scan materialized row: %w", err)
 				}
 				rowMap := make(map[string]any)
 				for i, colName := range cols {
@@ -77,16 +108,36 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 						rowMap[colName] = val
 					}
 				}
-				jsonBytes, _ := json.Marshal(rowMap)
-				insertSQL := fmt.Sprintf("INSERT INTO %s (row_num, data_json) VALUES ($1, $2)", tableName)
-				_, _ = client.Exec(ctx, insertSQL, totalCount, string(jsonBytes))
+				jsonBytes, err := json.Marshal(rowMap)
+				if err != nil {
+					return fmt.Errorf("encode materialized row: %w", err)
+				}
+				if len(materializedRows) >= maxEphemeralRows || materializedBytes+len(jsonBytes) > maxEphemeralBytes {
+					return fmt.Errorf("%w: limit is %d rows or %d bytes", ErrEphemeralResultTooLarge, maxEphemeralRows, maxEphemeralBytes)
+				}
+				materializedRows = append(materializedRows, string(jsonBytes))
+				materializedBytes += len(jsonBytes)
 			}
 			return rows.Err()
 		}, args...)
 		if err != nil {
-			slog.Warn("dbcore/ephemeral: Query row population warning", slog.String("error", err.Error()))
+			return nil, fmt.Errorf("dbcore/ephemeral: populate result table: %w", err)
 		}
 	}
+	if len(materializedRows) > 0 {
+		insertSQL := fmt.Sprintf("INSERT INTO %s (row_num, data_json) VALUES ($1, $2)", tableName)
+		if err := client.InTx(ctx, func(tx *sql.Tx) error {
+			for index, encodedRow := range materializedRows {
+				if _, err := tx.ExecContext(ctx, insertSQL, index+1, encodedRow); err != nil {
+					return fmt.Errorf("store materialized row %d: %w", index+1, err)
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("dbcore/ephemeral: persist result table: %w", err)
+		}
+	}
+	totalCount := len(materializedRows)
 
 	session := &EphemeralSession{
 		SessionID: sessionID,
@@ -95,24 +146,51 @@ func MaterializePagination(ctx context.Context, client *Client, query string, tt
 		ExpiresAt: time.Now().Add(ttl),
 	}
 
-	globalEphemeral.mu.Lock()
-	globalEphemeral.sessions[sessionID] = session
-	globalEphemeral.mu.Unlock()
+	if !globalEphemeral.add(session) {
+		return nil, ErrEphemeralCapacity
+	}
+	cleanupOnFailure = false
 
 	// Schedule automatic table cleanup on expiration
 	go func(tName, sID string, delay time.Duration) {
 		time.Sleep(delay)
-		cleanCtx := context.Background()
-		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", tName)
-		_, _ = client.Exec(cleanCtx, dropSQL)
-
-		globalEphemeral.mu.Lock()
-		delete(globalEphemeral.sessions, sID)
-		globalEphemeral.mu.Unlock()
-		slog.Info("dbcore/ephemeral: Auto-cleaned temporary materialized pagination table", slog.String("session_id", sID))
+		cleanupEphemeralTable(client, tName, sID)
 	}(tableName, sessionID, ttl)
 
 	return session, nil
+}
+
+func (manager *EphemeralManager) hasCapacity() bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	return len(manager.sessions) < maxEphemeralSessions
+}
+
+func (manager *EphemeralManager) add(session *EphemeralSession) bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if len(manager.sessions) >= maxEphemeralSessions {
+		return false
+	}
+	manager.sessions[session.SessionID] = session
+	return true
+}
+
+func cleanupEphemeralTable(client *Client, tableName, sessionID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), ephemeralCleanupTimeout)
+	defer cancel()
+	_, dropErr := client.Exec(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName))
+	if dropErr != nil {
+		slog.Error("dbcore/ephemeral: failed to drop temporary table", slog.String("session_id", sessionID), slog.Any("error", dropErr))
+	}
+	if sessionID != "" {
+		globalEphemeral.mu.Lock()
+		delete(globalEphemeral.sessions, sessionID)
+		globalEphemeral.mu.Unlock()
+		if dropErr == nil {
+			slog.Info("dbcore/ephemeral: auto-cleaned temporary materialized pagination table", slog.String("session_id", sessionID))
+		}
+	}
 }
 
 // MaterializeHistoryPagination creates an immutable snapshot table tailored for historical data tables (audit logs, historical sales, past reports).
@@ -153,9 +231,10 @@ func PaginateSession(ctx context.Context, client *Client, sessionID string, page
 		}
 		for rows.Next() {
 			var jsonStr string
-			if err := rows.Scan(&jsonStr); err == nil {
-				rowsJSON = append(rowsJSON, jsonStr)
+			if err := rows.Scan(&jsonStr); err != nil {
+				return fmt.Errorf("dbcore/ephemeral: scan paginated row: %w", err)
 			}
+			rowsJSON = append(rowsJSON, jsonStr)
 		}
 		return rows.Err()
 	}, startRow, endRow)
@@ -177,15 +256,18 @@ func PaginateSessionTyped[T any](ctx context.Context, client *Client, sessionID 
 	var results []T
 	for _, jsonStr := range jsonRows {
 		var item T
-		if err := json.Unmarshal([]byte(jsonStr), &item); err == nil {
-			results = append(results, item)
+		if err := json.Unmarshal([]byte(jsonStr), &item); err != nil {
+			return nil, 0, fmt.Errorf("dbcore/ephemeral: decode paginated row: %w", err)
 		}
+		results = append(results, item)
 	}
 	return results, total, nil
 }
 
-func generateSessionID() string {
+func generateSessionID() (string, error) {
 	b := make([]byte, 8)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("dbcore/ephemeral: generate session ID: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

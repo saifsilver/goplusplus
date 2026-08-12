@@ -1,3 +1,4 @@
+// Package order demonstrates a self-contained modular-monolith order domain.
 package order
 
 import (

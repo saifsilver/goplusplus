@@ -13,8 +13,10 @@ import (
 
 const defaultRedisPubSubMaxPayload = 1 << 20
 
+// ErrRedisNotConfigured indicates an uninitialized Redis bus.
 var ErrRedisNotConfigured = errors.New("pubsub: Redis provider is not configured")
 
+// RedisConfig defines connection, channel namespace, and payload limits.
 type RedisConfig struct {
 	URL             string
 	ChannelPrefix   string
@@ -31,6 +33,7 @@ type RedisBus struct {
 	ownsClient      bool
 }
 
+// NewRedisBus creates and verifies an owned Redis connection.
 func NewRedisBus(ctx context.Context, config RedisConfig) (*RedisBus, error) {
 	if strings.TrimSpace(config.URL) == "" {
 		return nil, errors.New("pubsub: Redis URL is required")
@@ -42,6 +45,7 @@ func NewRedisBus(ctx context.Context, config RedisConfig) (*RedisBus, error) {
 	return newRedisBus(ctx, redis.NewClient(options), config, true)
 }
 
+// NewRedisBusFromClient verifies and wraps an application-owned Redis client.
 func NewRedisBusFromClient(
 	ctx context.Context, client redis.UniversalClient, config RedisConfig,
 ) (*RedisBus, error) {
@@ -76,6 +80,7 @@ func newRedisBus(
 	}, nil
 }
 
+// Publish sends one bounded JSON notification with at-most-once semantics.
 func (bus *RedisBus) Publish(ctx context.Context, channel string, payload any) error {
 	if bus == nil || bus.client == nil {
 		return ErrRedisNotConfigured
@@ -135,6 +140,7 @@ func (bus *RedisBus) Subscribe(ctx context.Context, channel string, handler func
 	}
 }
 
+// Close releases the Redis client only when the bus owns it.
 func (bus *RedisBus) Close() error {
 	if bus == nil || bus.client == nil || !bus.ownsClient {
 		return nil

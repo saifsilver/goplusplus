@@ -97,7 +97,7 @@ func main() {
 		})
 	})
 
-	fmt.Println("🚀 Starting 100% Production-Ready goplusplus Master Server on http://localhost:8080")
+	fmt.Println("🚀 Starting goplusplus deployment example on http://localhost:8080")
 	fmt.Println("   • K8s Liveness Probe:  http://localhost:8080/healthz/liveness")
 	fmt.Println("   • K8s Readiness Probe: http://localhost:8080/healthz/readiness")
 

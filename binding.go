@@ -12,8 +12,10 @@ import (
 )
 
 const (
+	// DefaultMaxJSONBodyBytes is the default accepted JSON request size.
 	DefaultMaxJSONBodyBytes int64 = 1 << 20
-	MaximumJSONBodyBytes    int64 = 64 << 20
+	// MaximumJSONBodyBytes is the hard upper bound for configured JSON request sizes.
+	MaximumJSONBodyBytes int64 = 64 << 20
 )
 
 // JSONBindingConfig controls request JSON decoding. Zero values retain secure defaults.

@@ -11,19 +11,23 @@ import (
 	"time"
 )
 
+// MemoryBackend is a concurrency-safe, process-local Backend implementation.
 type MemoryBackend struct {
 	mu        sync.RWMutex
 	documents map[string]map[string]Document
 }
 
+// NewMemoryBackend creates an empty in-memory backend.
 func NewMemoryBackend() *MemoryBackend {
 	return &MemoryBackend{documents: make(map[string]map[string]Document)}
 }
 
+// Name identifies this backend as memory.
 func (b *MemoryBackend) Name() string {
 	return "memory"
 }
 
+// Index clones and stores a document in process memory.
 func (b *MemoryBackend) Index(_ context.Context, resource string, _ Schema, document Document) error {
 	cloned, err := cloneDocument(document)
 	if err != nil {
@@ -38,6 +42,7 @@ func (b *MemoryBackend) Index(_ context.Context, resource string, _ Schema, docu
 	return nil
 }
 
+// Delete removes a document from process memory.
 func (b *MemoryBackend) Delete(_ context.Context, resource, documentID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -45,6 +50,7 @@ func (b *MemoryBackend) Delete(_ context.Context, resource, documentID string) e
 	return nil
 }
 
+// Search evaluates a request against a consistent in-memory snapshot.
 func (b *MemoryBackend) Search(ctx context.Context, resource string, schema Schema, request SearchRequest) (SearchResult, error) {
 	documents, err := b.snapshot(resource)
 	if err != nil {

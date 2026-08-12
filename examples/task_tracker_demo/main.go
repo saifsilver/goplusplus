@@ -25,7 +25,7 @@ func main() {
 		taskID := c.AsyncTask("send_welcome_email", func(c *gpp.Context) error {
 			current := atomic.AddInt32(&attemptCounter, 1)
 			if current < 3 {
-				return fmt.Errorf("Simulated transient SMTP network error (Attempt #%d)", current)
+				return fmt.Errorf("simulated transient SMTP network error (attempt #%d)", current)
 			}
 			fmt.Println("  ✅ Email delivered successfully on attempt #3!")
 			return nil

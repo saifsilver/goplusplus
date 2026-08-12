@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// RetryConfig defines bounded exponential retry behavior.
 type RetryConfig struct {
 	MaxAttempts   int
 	InitialDelay  time.Duration
@@ -16,6 +17,7 @@ type RetryConfig struct {
 	Retryable     func(err error) bool
 }
 
+// DefaultRetryConfig returns three attempts with bounded exponential backoff.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:   3,

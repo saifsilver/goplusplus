@@ -12,7 +12,7 @@ import (
 	"github.com/saifsilver/goplusplus/id"
 )
 
-// Cached struct reflection metadata to guarantee zero reflection allocation per request query loop
+// structMeta caches reflection metadata outside request query loops.
 type structMeta struct {
 	tableName      string
 	pkField        string
@@ -210,9 +210,11 @@ func (o *ORM[T]) Paginate(ctx context.Context, page, limit int) ([]T, int, error
 	}
 
 	var total int
-	_ = o.client.QueryRow(ctx, countQuery, func(row *sql.Row) error {
+	if err := o.client.QueryRow(ctx, countQuery, func(row *sql.Row) error {
 		return row.Scan(&total)
-	}, o.whereArgs...)
+	}, o.whereArgs...); err != nil {
+		return nil, 0, fmt.Errorf("dbcore/orm: count paginated rows: %w", err)
+	}
 
 	dataQuery := fmt.Sprintf("SELECT %s FROM %s", strings.Join(o.meta.columns, ", "), o.tableName)
 	if len(o.whereConds) > 0 {
@@ -467,9 +469,11 @@ func QueryPaginated[T any](ctx context.Context, client *Client, baseQuery string
 
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM (%s) AS subquery", baseQuery)
 	var total int
-	_ = client.QueryRow(ctx, countSQL, func(row *sql.Row) error {
+	if err := client.QueryRow(ctx, countSQL, func(row *sql.Row) error {
 		return row.Scan(&total)
-	}, args...)
+	}, args...); err != nil {
+		return nil, 0, fmt.Errorf("dbcore: count paginated query rows: %w", err)
+	}
 
 	paginatedSQL := fmt.Sprintf("%s LIMIT $%d OFFSET $%d", baseQuery, len(args)+1, len(args)+2)
 	pArgs := append(append([]any{}, args...), limit, offset)

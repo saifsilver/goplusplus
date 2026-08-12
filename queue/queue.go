@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// ErrQueueNotConfigured indicates that a Queue has no durable publisher.
 var ErrQueueNotConfigured = errors.New("queue: no durable queue provider is configured")
 
 // Queue handles async background worker job dispatching.
@@ -22,6 +23,7 @@ func New() *Queue {
 	return &Queue{}
 }
 
+// NewWithPublisher constructs a queue using an explicit durable publisher and topic.
 func NewWithPublisher(publisher OutboxPublisher, topic string) (*Queue, error) {
 	if publisher == nil {
 		return nil, ErrQueueNotConfigured

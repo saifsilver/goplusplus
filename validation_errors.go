@@ -14,10 +14,6 @@ func newValidationViolation(path string, value reflect.Value, rule validationRul
 	return &validationViolation{field: path, rule: rule.name, param: rule.param, kind: kind}
 }
 
-func formatValidationError(violation *validationViolation) string {
-	return fmt.Sprintf("Field '%s' %s", violation.field, validationRuleMessage(violation))
-}
-
 func validationRuleMessage(violation *validationViolation) string {
 	switch violation.rule {
 	case "required", "required_if", "required_unless", "required_with", "required_with_all", "required_without", "required_without_all":

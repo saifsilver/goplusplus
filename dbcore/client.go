@@ -41,10 +41,12 @@ type Client struct {
 
 type queryCacheKey struct{}
 
+// WithCache annotates ctx with a requested query-cache lifetime.
 func WithCache(ctx context.Context, ttl time.Duration) context.Context {
 	return context.WithValue(ctx, queryCacheKey{}, ttl)
 }
 
+// GetCacheTTL returns the query-cache lifetime attached to ctx.
 func GetCacheTTL(ctx context.Context) (time.Duration, bool) {
 	ttl, ok := ctx.Value(queryCacheKey{}).(time.Duration)
 	return ttl, ok
@@ -166,10 +168,16 @@ func normalizeSlowQuery(cfg SlowQueryConfig) SlowQueryConfig {
 	return cfg
 }
 
+// Dialect returns the configured SQL dialect.
 func (c *Client) Dialect() string { return c.dialect }
-func (c *Client) DB() *sql.DB     { return c.rw }
+
+// DB returns the primary read-write database pool.
+func (c *Client) DB() *sql.DB { return c.rw }
+
+// ReadDB returns the read pool, which may be the primary when no replica exists.
 func (c *Client) ReadDB() *sql.DB { return c.ro }
 
+// Exec executes a write statement against the primary pool.
 func (c *Client) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	start := time.Now()
 	res, err := c.rw.ExecContext(ctx, query, args...)
@@ -180,20 +188,24 @@ func (c *Client) Exec(ctx context.Context, query string, args ...any) (sql.Resul
 	return res, nil
 }
 
+// ExecContext implements context-aware SQL execution against the primary pool.
 func (c *Client) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.Exec(ctx, query, args...)
 }
 
+// ExecIdempotent executes caller-defined idempotent SQL against the primary pool.
 func (c *Client) ExecIdempotent(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.Exec(ctx, query, args...)
 }
 
+// ParallelTask describes one named SQL query for ParallelQuery.
 type ParallelTask struct {
 	QueryName string
 	SQL       string
 	Args      []any
 }
 
+// ParallelQuery executes independent queries concurrently and returns an observed error.
 func (c *Client) ParallelQuery(ctx context.Context, tasks ...ParallelTask) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(tasks))
@@ -216,6 +228,7 @@ func (c *Client) ParallelQuery(ctx context.Context, tasks ...ParallelTask) error
 	return nil
 }
 
+// QueryRow executes one read query and passes its row to fn.
 func (c *Client) QueryRow(ctx context.Context, query string, fn func(*sql.Row) error, args ...any) error {
 	start := time.Now()
 	row := c.ro.QueryRowContext(ctx, query, args...)
@@ -227,6 +240,7 @@ func (c *Client) QueryRow(ctx context.Context, query string, fn func(*sql.Row) e
 	return err
 }
 
+// Query executes a read query, invokes fn, and closes the returned rows.
 func (c *Client) Query(ctx context.Context, query string, fn func(*sql.Rows) error, args ...any) error {
 	start := time.Now()
 	rows, err := c.ro.QueryContext(ctx, query, args...)
@@ -243,6 +257,7 @@ func (c *Client) Query(ctx context.Context, query string, fn func(*sql.Rows) err
 	return ClassifyError(rows.Err())
 }
 
+// QueryContext implements context-aware querying against the read pool.
 func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
 	rows, err := c.ro.QueryContext(ctx, query, args...)
@@ -253,10 +268,12 @@ func (c *Client) QueryContext(ctx context.Context, query string, args ...any) (*
 	return rows, nil
 }
 
+// QueryRowContext returns one row from the read pool.
 func (c *Client) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return c.ro.QueryRowContext(ctx, query, args...)
 }
 
+// BeginTx begins a transaction on the primary pool.
 func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
 	tx, err := c.rw.BeginTx(ctx, opts)
 	if err != nil {
@@ -265,6 +282,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, err
 	return tx, nil
 }
 
+// InTx commits fn on success and rolls back on failure.
 func (c *Client) InTx(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	if fn == nil {
 		return errors.New("dbcore: transaction callback is nil")
@@ -282,8 +300,10 @@ func (c *Client) InTx(ctx context.Context, fn func(*sql.Tx) error) (err error) {
 	return ClassifyError(tx.Commit())
 }
 
+// PingContext verifies primary database connectivity.
 func (c *Client) PingContext(ctx context.Context) error { return ClassifyError(c.rw.PingContext(ctx)) }
 
+// Stats returns redacted primary and replica pool health and utilization.
 func (c *Client) Stats() map[string]any {
 	rw := c.rw.Stats()
 	ro := c.ro.Stats()
@@ -305,6 +325,7 @@ func boundedPing(db *sql.DB) bool {
 	return db.PingContext(ctx) == nil
 }
 
+// Close releases owned database pools once.
 func (c *Client) Close() error {
 	c.close.Do(func() {
 		if c.ro != nil && c.ro != c.rw {

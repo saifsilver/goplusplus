@@ -20,6 +20,7 @@ func NewFaker() *Faker {
 	return &Faker{}
 }
 
+// DefaultFaker is the process-wide development data generator.
 var DefaultFaker = NewFaker()
 
 var (

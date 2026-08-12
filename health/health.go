@@ -15,14 +15,18 @@ import (
 	gpp "github.com/saifsilver/goplusplus"
 )
 
+// CheckFunc reports whether one readiness dependency is healthy.
 type CheckFunc func(context.Context) error
 
+// ContextPinger is implemented by context-aware database and service clients.
 type ContextPinger interface {
 	PingContext(context.Context) error
 }
 
+// CheckerOption configures a Checker.
 type CheckerOption func(*Checker)
 
+// WithTimeout sets the maximum duration of each readiness check.
 func WithTimeout(timeout time.Duration) CheckerOption {
 	return func(checker *Checker) {
 		if timeout > 0 {
@@ -31,12 +35,14 @@ func WithTimeout(timeout time.Duration) CheckerOption {
 	}
 }
 
+// Checker owns bounded liveness and readiness checks.
 type Checker struct {
 	mu              sync.RWMutex
 	readinessChecks map[string]CheckFunc
 	timeout         time.Duration
 }
 
+// NewChecker constructs a checker with a two-second per-check timeout.
 func NewChecker(options ...CheckerOption) *Checker {
 	checker := &Checker{readinessChecks: make(map[string]CheckFunc), timeout: 2 * time.Second}
 	for _, option := range options {
@@ -55,6 +61,7 @@ func (checker *Checker) AddReadinessCheck(name string, check CheckFunc) {
 	checker.mu.Unlock()
 }
 
+// RegisterReadinessCheck registers a uniquely named dependency check.
 func (checker *Checker) RegisterReadinessCheck(name string, check CheckFunc) error {
 	name = strings.TrimSpace(name)
 	if name == "" || check == nil {
@@ -69,6 +76,7 @@ func (checker *Checker) RegisterReadinessCheck(name string, check CheckFunc) err
 	return nil
 }
 
+// SQLReadiness adapts a context-aware pinger into a readiness check.
 func SQLReadiness(pinger ContextPinger) CheckFunc {
 	return func(ctx context.Context) error {
 		if pinger == nil {
@@ -78,6 +86,7 @@ func SQLReadiness(pinger ContextPinger) CheckFunc {
 	}
 }
 
+// Liveness returns a handler that reports process liveness without checking dependencies.
 func (checker *Checker) Liveness() gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
 		return c.JSON(http.StatusOK, gpp.H{"status": "UP", "checker": "liveness"})
@@ -105,6 +114,7 @@ func (checker *Checker) snapshot() []namedCheck {
 	return checks
 }
 
+// Readiness returns a handler that runs dependency checks concurrently and redacts errors.
 func (checker *Checker) Readiness() gpp.HandlerFunc {
 	return func(c *gpp.Context) error {
 		checks := checker.snapshot()

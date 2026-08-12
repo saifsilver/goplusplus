@@ -1,0 +1,9 @@
+# Repository-wide ownership. Add package specialists as maintainership grows.
+* @saifsilver
+
+/.github/ @saifsilver
+/auth/ @saifsilver
+/dbcore/ @saifsilver
+/docs/ @saifsilver
+/middleware/ @saifsilver
+/queue/ @saifsilver

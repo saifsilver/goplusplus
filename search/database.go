@@ -10,25 +10,30 @@ import (
 	"strings"
 )
 
+// SQLDatabase is the database/sql subset required by DatabaseBackend.
 type SQLDatabase interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
+// DatabaseConfig configures the PostgreSQL search document table.
 type DatabaseConfig struct {
 	Table string
 }
 
+// DatabaseBackend implements Backend with PostgreSQL JSONB and full-text search.
 type DatabaseBackend struct {
 	db    SQLDatabase
 	table string
 }
 
+// SQLQuery is a parameterized statement and its ordered arguments.
 type SQLQuery struct {
 	Statement string
 	Args      []any
 }
 
+// DatabaseQueryPlan contains the SQL generated for one normalized search request.
 type DatabaseQueryPlan struct {
 	Count  SQLQuery
 	Hits   SQLQuery
@@ -37,6 +42,7 @@ type DatabaseQueryPlan struct {
 
 var sqlIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,47}$`)
 
+// NewDatabaseBackend validates the database and table configuration.
 func NewDatabaseBackend(db SQLDatabase, config DatabaseConfig) (*DatabaseBackend, error) {
 	if db == nil {
 		return nil, fmt.Errorf("search: database is required")
@@ -50,10 +56,12 @@ func NewDatabaseBackend(db SQLDatabase, config DatabaseConfig) (*DatabaseBackend
 	return &DatabaseBackend{db: db, table: config.Table}, nil
 }
 
+// Name identifies this backend as database.
 func (b *DatabaseBackend) Name() string {
 	return "database"
 }
 
+// Setup creates the backing table and indexes if they do not exist.
 func (b *DatabaseBackend) Setup(ctx context.Context) error {
 	statements := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -75,6 +83,7 @@ func (b *DatabaseBackend) Setup(ctx context.Context) error {
 	return nil
 }
 
+// Index inserts or replaces one resource document.
 func (b *DatabaseBackend) Index(ctx context.Context, resource string, schema Schema, document Document) error {
 	payload, err := json.Marshal(document.Attributes)
 	if err != nil {
@@ -93,6 +102,7 @@ func (b *DatabaseBackend) Index(ctx context.Context, resource string, schema Sch
 	return nil
 }
 
+// Delete removes one resource document by ID.
 func (b *DatabaseBackend) Delete(ctx context.Context, resource, documentID string) error {
 	statement := fmt.Sprintf("DELETE FROM %s WHERE resource = $1 AND id = $2", b.table)
 	if _, err := b.db.ExecContext(ctx, statement, resource, documentID); err != nil {
@@ -114,6 +124,7 @@ func searchableText(schema Schema, document Document) string {
 	return strings.Join(values, " ")
 }
 
+// Search executes the compiled count, hit, and facet queries.
 func (b *DatabaseBackend) Search(ctx context.Context, resource string, schema Schema, request SearchRequest) (SearchResult, error) {
 	normalized, err := schema.NormalizeRequest(request)
 	if err != nil {
@@ -144,6 +155,7 @@ func (b *DatabaseBackend) Search(ctx context.Context, resource string, schema Sc
 	return SearchResult{Items: items, Total: total, Facets: facets, NextCursor: nextCursor, Backend: b.Name()}, nil
 }
 
+// Compile produces parameterized PostgreSQL queries without executing them.
 func (b *DatabaseBackend) Compile(resource string, schema Schema, request SearchRequest) (DatabaseQueryPlan, error) {
 	normalized, err := schema.NormalizeRequest(request)
 	if err != nil {

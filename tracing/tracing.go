@@ -22,8 +22,10 @@ import (
 
 const instrumentationName = "github.com/saifsilver/goplusplus/tracing"
 
+// ErrExporterNotConfigured indicates that neither an exporter nor valid endpoint exists.
 var ErrExporterNotConfigured = errors.New("tracing: OTLP exporter endpoint is not configured")
 
+// Config defines service identity, export transport, sampling, and batching.
 type Config struct {
 	ServiceName    string
 	ServiceVersion string
@@ -45,6 +47,7 @@ type Provider struct {
 	propagator     propagation.TextMapPropagator
 }
 
+// NewProvider validates configuration and constructs an owned OpenTelemetry provider.
 func NewProvider(ctx context.Context, config Config) (*Provider, error) {
 	if strings.TrimSpace(config.ServiceName) == "" {
 		return nil, errors.New("tracing: service name is required")
@@ -118,6 +121,7 @@ func newOTLPExporter(ctx context.Context, config Config) (sdktrace.SpanExporter,
 	return exporter, nil
 }
 
+// Middleware instruments requests using this provider and its propagator.
 func (provider *Provider) Middleware() gpp.HandlerFunc {
 	if provider == nil || provider.tracerProvider == nil {
 		return failClosedMiddleware()
@@ -163,6 +167,7 @@ func failClosedMiddleware() gpp.HandlerFunc {
 	}
 }
 
+// ForceFlush exports queued spans within ctx.
 func (provider *Provider) ForceFlush(ctx context.Context) error {
 	if provider == nil || provider.tracerProvider == nil {
 		return nil
@@ -170,6 +175,7 @@ func (provider *Provider) ForceFlush(ctx context.Context) error {
 	return provider.tracerProvider.ForceFlush(ctx)
 }
 
+// Shutdown flushes and releases the owned trace provider.
 func (provider *Provider) Shutdown(ctx context.Context) error {
 	if provider == nil || provider.tracerProvider == nil {
 		return nil

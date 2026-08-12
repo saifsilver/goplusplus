@@ -18,8 +18,10 @@ import (
 
 const defaultRabbitMQMaxPayload = 1 << 20
 
+// ErrRabbitMQNotConfigured indicates an uninitialized RabbitMQ bus.
 var ErrRabbitMQNotConfigured = errors.New("pubsub: RabbitMQ provider is not configured")
 
+// RabbitMQConfig defines connection, exchange, delivery, and capacity policy.
 type RabbitMQConfig struct {
 	URL               string
 	Exchange          string
@@ -33,6 +35,7 @@ type RabbitMQConfig struct {
 	QuorumQueues      bool
 }
 
+// RabbitMQBus publishes confirmed persistent messages and consumes durable queues.
 type RabbitMQBus struct {
 	config         RabbitMQConfig
 	connection     *amqp.Connection
@@ -43,6 +46,7 @@ type RabbitMQBus struct {
 	closeErr       error
 }
 
+// NewRabbitMQBus connects, verifies, and configures a RabbitMQ publisher.
 func NewRabbitMQBus(ctx context.Context, config RabbitMQConfig) (*RabbitMQBus, error) {
 	config, err := normalizeRabbitMQConfig(config)
 	if err != nil {
@@ -77,6 +81,7 @@ func NewRabbitMQBus(ctx context.Context, config RabbitMQConfig) (*RabbitMQBus, e
 	}, nil
 }
 
+// Publish sends a bounded persistent message and waits for broker confirmation.
 func (bus *RabbitMQBus) Publish(
 	ctx context.Context, exchange, routingKey string, payload []byte,
 ) error {
@@ -195,6 +200,7 @@ func (bus *RabbitMQBus) Subscribe(
 	return errors.New("pubsub: RabbitMQ delivery channel closed")
 }
 
+// Close releases the publish channel and connection once.
 func (bus *RabbitMQBus) Close() error {
 	if bus == nil {
 		return nil

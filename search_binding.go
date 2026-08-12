@@ -12,6 +12,7 @@ import (
 	"github.com/saifsilver/goplusplus/search"
 )
 
+// BindSearchResource registers a JSON search endpoint on group.
 func BindSearchResource(group *RouterGroup, relativePath string, resource *search.Resource) {
 	if group == nil || resource == nil {
 		panic("gpp: search route requires a router group and resource")
@@ -32,6 +33,7 @@ func BindSearchResource(group *RouterGroup, relativePath string, resource *searc
 	})
 }
 
+// BindSearchGraphQL registers a typed search query field backed by registry.
 func BindSearchGraphQL(engine *Engine, fieldName string, registry *search.Registry) error {
 	if registry == nil {
 		return fmt.Errorf("gpp: search registry is required")

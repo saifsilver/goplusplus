@@ -25,16 +25,20 @@ const (
 )
 
 var (
+	// ErrKafkaNotConfigured indicates an uninitialized Kafka producer or consumer.
 	ErrKafkaNotConfigured = errors.New("queue: Kafka provider is not configured")
-	ErrKafkaConsumerRun   = errors.New("queue: Kafka consumer is already running")
+	// ErrKafkaConsumerRun indicates that Run was called concurrently.
+	ErrKafkaConsumerRun = errors.New("queue: Kafka consumer is already running")
 )
 
+// KafkaSASLConfig defines an optional PLAIN, SCRAM-SHA-256, or SCRAM-SHA-512 identity.
 type KafkaSASLConfig struct {
 	Mechanism string
 	Username  string
 	Password  string
 }
 
+// KafkaConfig defines shared broker, security, timeout, retry, and capacity policy.
 type KafkaConfig struct {
 	Brokers          []string
 	ClientID         string
@@ -47,11 +51,13 @@ type KafkaConfig struct {
 	RecordRetries    int
 }
 
+// KafkaProducerConfig adds a validated default topic to KafkaConfig.
 type KafkaProducerConfig struct {
 	KafkaConfig
 	Topic string
 }
 
+// KafkaMessage is the bounded application view of one consumed record.
 type KafkaMessage struct {
 	Topic     string
 	Key       []byte
@@ -62,6 +68,7 @@ type KafkaMessage struct {
 	Time      time.Time
 }
 
+// KafkaProducer synchronously publishes fully acknowledged records.
 type KafkaProducer struct {
 	client          *kgo.Client
 	topic           string
@@ -77,6 +84,7 @@ func NewKafkaWorker(brokers []string, topic string) *KafkaWorker {
 	return &KafkaWorker{topic: topic, maxMessageBytes: defaultKafkaMaxMessageBytes}
 }
 
+// NewKafkaProducer validates, connects, and verifies a Kafka producer.
 func NewKafkaProducer(ctx context.Context, config KafkaProducerConfig) (*KafkaProducer, error) {
 	normalized, options, err := kafkaClientOptions(config.KafkaConfig)
 	if err != nil {
@@ -105,10 +113,12 @@ func NewKafkaProducer(ctx context.Context, config KafkaProducerConfig) (*KafkaPr
 	return &KafkaProducer{client: client, topic: config.Topic, maxMessageBytes: normalized.MaxMessageBytes}, nil
 }
 
+// PublishMessage sends a record to the producer's default topic.
 func (producer *KafkaProducer) PublishMessage(ctx context.Context, key string, payload []byte) error {
 	return producer.Publish(ctx, producer.topic, []byte(key), payload, nil)
 }
 
+// Publish sends a bounded record and waits for broker acknowledgement.
 func (producer *KafkaProducer) Publish(
 	ctx context.Context, topic string, key, payload []byte, headers map[string][]byte,
 ) error {
@@ -128,6 +138,7 @@ func (producer *KafkaProducer) Publish(
 	return nil
 }
 
+// Close flushes pending records within ctx and releases the producer.
 func (producer *KafkaProducer) Close(ctx context.Context) error {
 	if producer == nil || producer.client == nil {
 		return nil
@@ -140,6 +151,7 @@ func (producer *KafkaProducer) Close(ctx context.Context) error {
 	return nil
 }
 
+// KafkaConsumerConfig defines topics, group, retry, batching, and dead-letter policy.
 type KafkaConsumerConfig struct {
 	KafkaConfig
 	Topics            []string
@@ -150,6 +162,7 @@ type KafkaConsumerConfig struct {
 	RetryBackoff      time.Duration
 }
 
+// KafkaConsumer processes and explicitly commits records for one consumer group.
 type KafkaConsumer struct {
 	client            *kgo.Client
 	dlqTopic          string
@@ -161,6 +174,7 @@ type KafkaConsumer struct {
 	closed            chan struct{}
 }
 
+// NewKafkaConsumer validates, connects, and verifies a Kafka group consumer.
 func NewKafkaConsumer(ctx context.Context, config KafkaConsumerConfig) (*KafkaConsumer, error) {
 	normalized, options, err := kafkaClientOptions(config.KafkaConfig)
 	if err != nil {
@@ -223,6 +237,7 @@ func NewKafkaConsumer(ctx context.Context, config KafkaConsumerConfig) (*KafkaCo
 	}, nil
 }
 
+// Run blocks until cancellation, closure, or a consumption failure.
 func (consumer *KafkaConsumer) Run(ctx context.Context, handler func(context.Context, KafkaMessage) error) error {
 	if consumer == nil || consumer.client == nil {
 		return ErrKafkaNotConfigured
@@ -294,6 +309,7 @@ func (consumer *KafkaConsumer) processRecord(
 	return nil
 }
 
+// Close permits rebalance and waits for the consumer client to close.
 func (consumer *KafkaConsumer) Close(ctx context.Context) error {
 	if consumer == nil || consumer.client == nil {
 		return nil

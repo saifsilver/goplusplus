@@ -7,15 +7,18 @@ import (
 	"strings"
 )
 
+// ParamIntStrict parses a required path parameter without fallback behavior.
 func (c *Context) ParamIntStrict(key string) (int, error) {
 	value, err := c.strictParameter(key, c.Param(key), c.hasParam(key), strconv.IntSize)
 	return int(value), err
 }
 
+// ParamInt64Strict parses a required path parameter as an int64.
 func (c *Context) ParamInt64Strict(key string) (int64, error) {
 	return c.strictParameter(key, c.Param(key), c.hasParam(key), 64)
 }
 
+// ParamPositiveInt64 parses a required positive int64 path parameter.
 func (c *Context) ParamPositiveInt64(key string) (int64, error) {
 	value, err := c.ParamInt64Strict(key)
 	if err != nil {
@@ -27,6 +30,7 @@ func (c *Context) ParamPositiveInt64(key string) (int64, error) {
 	return value, nil
 }
 
+// ParamUUIDStrict validates a required UUID path parameter.
 func (c *Context) ParamUUIDStrict(key string) (string, error) {
 	value, exists := c.Param(key), c.hasParam(key)
 	if !exists {
@@ -41,6 +45,7 @@ func (c *Context) ParamUUIDStrict(key string) (string, error) {
 	return value, nil
 }
 
+// QueryInt64Strict parses a required query parameter as an int64.
 func (c *Context) QueryInt64Strict(key string) (int64, error) {
 	values, exists := c.Request.URL.Query()[key]
 	value := ""
@@ -50,6 +55,7 @@ func (c *Context) QueryInt64Strict(key string) (int64, error) {
 	return c.strictParameter(key, value, exists, 64)
 }
 
+// QueryOptionalInt64Strict parses an optional int64 query parameter.
 func (c *Context) QueryOptionalInt64Strict(key string) (*int64, error) {
 	if _, exists := c.Request.URL.Query()[key]; !exists {
 		return nil, nil
@@ -93,6 +99,7 @@ func parameterProblem(field, rule, message string) *ProblemDetails {
 	return problem
 }
 
+// PaginationPolicy defines names, defaults, limits, and strictness for offset pagination.
 type PaginationPolicy struct {
 	DefaultPage    int
 	DefaultLimit   int
@@ -103,12 +110,14 @@ type PaginationPolicy struct {
 	Strict         bool
 }
 
+// Pagination is a normalized, overflow-checked offset pagination request.
 type Pagination struct {
 	Page   int `json:"page"`
 	Limit  int `json:"limit"`
 	Offset int `json:"offset"`
 }
 
+// Parse reads and normalizes pagination parameters from c.
 func (policy PaginationPolicy) Parse(c *Context) (Pagination, error) {
 	policy, err := normalizePaginationPolicy(policy)
 	if err != nil {
@@ -180,6 +189,7 @@ func parsePaginationValue(c *Context, key string, fallback int, strict bool) (in
 	return value, nil
 }
 
+// TotalPages calculates the page count for a non-negative total and positive limit.
 func TotalPages(total, limit int) (int, error) {
 	if total < 0 || limit <= 0 {
 		return 0, ErrInternal("Invalid pagination totals")

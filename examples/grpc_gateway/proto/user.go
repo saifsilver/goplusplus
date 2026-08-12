@@ -1,3 +1,4 @@
+// Package proto declares the transport-neutral user contract for the gRPC example.
 package proto
 
 import (

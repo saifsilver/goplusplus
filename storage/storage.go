@@ -36,6 +36,7 @@ func NewLocalStorageProvider(baseDir string) *LocalStorageProvider {
 	return &LocalStorageProvider{baseDir: absoluteDir, initErr: err}
 }
 
+// Upload writes one object beneath the configured local storage root.
 func (l *LocalStorageProvider) Upload(ctx context.Context, key string, data []byte, contentType string) (string, error) {
 	if l.initErr != nil {
 		return "", fmt.Errorf("storage: initialize local provider: %w", l.initErr)
@@ -68,6 +69,7 @@ func (l *LocalStorageProvider) Upload(ctx context.Context, key string, data []by
 	return localStorageURL(cleanKey), nil
 }
 
+// GetPresignedURL returns the local serving path; it does not create a signature.
 func (l *LocalStorageProvider) GetPresignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	if l.initErr != nil {
 		return "", fmt.Errorf("storage: initialize local provider: %w", l.initErr)

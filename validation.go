@@ -28,6 +28,7 @@ type validationViolation struct {
 	kind  reflect.Kind
 }
 
+// Error implements error for an internal validation-rule violation.
 func (e *validationViolation) Error() string {
 	return fmt.Sprintf("field %s failed %s", e.field, e.rule)
 }
@@ -36,6 +37,7 @@ type validationConfigError struct {
 	message string
 }
 
+// Error implements error for invalid validator configuration.
 func (e *validationConfigError) Error() string { return e.message }
 
 type validationVisit struct {

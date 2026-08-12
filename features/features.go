@@ -5,6 +5,7 @@ import (
 	"sync"
 )
 
+// Manager stores process-local boolean feature flags.
 type Manager struct {
 	mu    sync.RWMutex
 	flags map[string]bool

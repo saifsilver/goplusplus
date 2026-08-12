@@ -39,6 +39,7 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
+// Set stores a process-local value until its TTL expires.
 func (s *MemoryStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
 	s.mu.Lock()
 	s.store[key] = cacheItem{val: val, expiresAt: time.Now().Add(ttl)}
@@ -46,6 +47,7 @@ func (s *MemoryStore) Set(ctx context.Context, key string, val any, ttl time.Dur
 	return nil
 }
 
+// Get returns a live process-local value when present.
 func (s *MemoryStore) Get(ctx context.Context, key string) (any, bool, error) {
 	value, found, _, err := s.getWithTTL(ctx, key)
 	return value, found, err
@@ -65,6 +67,7 @@ func (s *MemoryStore) getWithTTL(ctx context.Context, key string) (any, bool, ti
 	return item.val, true, remaining, nil
 }
 
+// Delete removes a process-local cache entry.
 func (s *MemoryStore) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
 	delete(s.store, key)
@@ -72,6 +75,7 @@ func (s *MemoryStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// GetOrSet coalesces concurrent process-local misses and caches the fetched value.
 func (s *MemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
 	if val, ok, err := s.Get(ctx, key); err != nil {
 		return nil, err
@@ -98,6 +102,7 @@ func (s *MemoryStore) GetOrSet(ctx context.Context, key string, ttl time.Duratio
 	}
 }
 
+// InvalidatePrefix removes process-local keys that begin with prefix.
 func (s *MemoryStore) InvalidatePrefix(ctx context.Context, prefix string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,6 +126,7 @@ func NewMultiLevelStore(l1, l2 Store) *MultiLevelStore {
 	return &MultiLevelStore{l1: l1, l2: l2}
 }
 
+// Get reads L1 before L2 and repopulates L1 with the remaining lifetime.
 func (m *MultiLevelStore) Get(ctx context.Context, key string) (any, bool, error) {
 	if val, ok, err := m.l1.Get(ctx, key); err != nil {
 		return nil, false, fmt.Errorf("cache: read L1: %w", err)
@@ -152,6 +158,7 @@ func getWithRemainingTTL(ctx context.Context, store Store, key string) (any, boo
 	return value, found, 0, err
 }
 
+// Set writes the authoritative L2 before L1.
 func (m *MultiLevelStore) Set(ctx context.Context, key string, val any, ttl time.Duration) error {
 	if err := m.l2.Set(ctx, key, val, ttl); err != nil {
 		return fmt.Errorf("cache: write L2: %w", err)
@@ -162,10 +169,12 @@ func (m *MultiLevelStore) Set(ctx context.Context, key string, val any, ttl time
 	return nil
 }
 
+// Delete removes key from both cache levels and joins failures.
 func (m *MultiLevelStore) Delete(ctx context.Context, key string) error {
 	return errors.Join(m.l1.Delete(ctx, key), m.l2.Delete(ctx, key))
 }
 
+// GetOrSet coalesces misses and populates both cache levels.
 func (m *MultiLevelStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
 	if val, ok, err := m.Get(ctx, key); err != nil {
 		return nil, err
@@ -195,6 +204,7 @@ func (m *MultiLevelStore) GetOrSet(ctx context.Context, key string, ttl time.Dur
 	}
 }
 
+// InvalidatePrefix removes matching keys from both levels and joins failures.
 func (m *MultiLevelStore) InvalidatePrefix(ctx context.Context, prefix string) error {
 	return errors.Join(m.l1.InvalidatePrefix(ctx, prefix), m.l2.InvalidatePrefix(ctx, prefix))
 }
@@ -202,4 +212,5 @@ func (m *MultiLevelStore) InvalidatePrefix(ctx context.Context, prefix string) e
 // Legacy Client alias for backwards compatibility
 type Client = MemoryStore
 
+// NewClient returns the legacy process-local cache client.
 func NewClient() *Client { return NewMemoryStore() }

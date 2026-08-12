@@ -1,3 +1,4 @@
+// Package services provides local and remote user-service example adapters.
 package services
 
 import (
@@ -28,6 +29,7 @@ func NewInMemUserService() *InMemUserService {
 	}
 }
 
+// GetUser returns a locally stored example user by ID.
 func (s *InMemUserService) GetUser(ctx context.Context, id string) (*proto.UserDTO, error) {
 	user, exists := s.db[id]
 	if !exists {
@@ -36,6 +38,7 @@ func (s *InMemUserService) GetUser(ctx context.Context, id string) (*proto.UserD
 	return user, nil
 }
 
+// CreateUser adds a user to the process-local example store.
 func (s *InMemUserService) CreateUser(ctx context.Context, name, email, role string) (*proto.UserDTO, error) {
 	id := fmt.Sprintf("usr_%d", time.Now().UnixNano())
 	user := &proto.UserDTO{
@@ -61,6 +64,7 @@ func NewGRPCUserServiceProxy(targetAddr string) *GRPCUserServiceProxy {
 	}
 }
 
+// GetUser demonstrates the shape of a generated remote gRPC lookup.
 func (s *GRPCUserServiceProxy) GetUser(ctx context.Context, id string) (*proto.UserDTO, error) {
 	// In production, this invokes the generated gRPC client method over HTTP/2 channel
 	return &proto.UserDTO{
@@ -72,6 +76,7 @@ func (s *GRPCUserServiceProxy) GetUser(ctx context.Context, id string) (*proto.U
 	}, nil
 }
 
+// CreateUser demonstrates the shape of a generated remote gRPC create call.
 func (s *GRPCUserServiceProxy) CreateUser(ctx context.Context, name, email, role string) (*proto.UserDTO, error) {
 	return &proto.UserDTO{
 		ID:        "grpc_created_99",

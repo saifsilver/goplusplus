@@ -18,8 +18,10 @@ import (
 	"github.com/saifsilver/goplusplus"
 )
 
+// IdempotencyHeader is the request header containing the application idempotency key.
 const IdempotencyHeader = "Idempotency-Key"
 
+// IdempotencyConfig defines replay limits, scoping, lifetimes, and storage.
 type IdempotencyConfig struct {
 	TTL              time.Duration             // Cached response lifetime; defaults to 24 hours.
 	PendingTTL       time.Duration             // In-flight claim lifetime; defaults to 30 seconds.
@@ -278,8 +280,10 @@ func newIdempotencyResponseBuffer(writer http.ResponseWriter, maxBodyBytes int) 
 	}
 }
 
+// Header returns the buffered response headers.
 func (r *idempotencyResponseBuffer) Header() http.Header { return r.header }
 
+// WriteHeader records the first buffered response status.
 func (r *idempotencyResponseBuffer) WriteHeader(code int) {
 	if r.wroteHeader {
 		return
@@ -288,6 +292,7 @@ func (r *idempotencyResponseBuffer) WriteHeader(code int) {
 	r.wroteHeader = true
 }
 
+// Write buffers a replayable body or flushes when the configured bound is exceeded.
 func (r *idempotencyResponseBuffer) Write(data []byte) (int, error) {
 	if !r.wroteHeader {
 		r.wroteHeader = true
@@ -305,6 +310,7 @@ func (r *idempotencyResponseBuffer) Write(data []byte) (int, error) {
 	return r.ResponseWriter.Write(data)
 }
 
+// FlushResponse commits the buffered response to the underlying writer once.
 func (r *idempotencyResponseBuffer) FlushResponse() error {
 	if r.flushed {
 		return nil
@@ -332,10 +338,12 @@ type responseRecorder struct {
 	overflow     bool
 }
 
+// Header returns the response headers observed by the recorder.
 func (r *responseRecorder) Header() http.Header {
 	return r.header
 }
 
+// WriteHeader records and delegates the first response status.
 func (r *responseRecorder) WriteHeader(code int) {
 	if r.wroteHeader {
 		return
@@ -345,6 +353,7 @@ func (r *responseRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Write records a bounded response copy and delegates the body write.
 func (r *responseRecorder) Write(b []byte) (int, error) {
 	if !r.wroteHeader {
 		r.commitHeader()
@@ -364,6 +373,7 @@ func (r *responseRecorder) commitHeader() {
 	r.wroteHeader = true
 }
 
+// Flush marks the response unshareable and delegates an immediate flush.
 func (r *responseRecorder) Flush() {
 	r.overflow = true
 	if !r.wroteHeader {
@@ -372,11 +382,13 @@ func (r *responseRecorder) Flush() {
 	_ = http.NewResponseController(r.ResponseWriter).Flush()
 }
 
+// Hijack marks the response unshareable and delegates connection hijacking.
 func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	r.overflow = true
 	return http.NewResponseController(r.ResponseWriter).Hijack()
 }
 
+// Push delegates HTTP/2 server push when supported.
 func (r *responseRecorder) Push(target string, options *http.PushOptions) error {
 	if pusher, ok := r.ResponseWriter.(http.Pusher); ok {
 		return pusher.Push(target, options)
@@ -384,4 +396,5 @@ func (r *responseRecorder) Push(target string, options *http.PushOptions) error 
 	return http.ErrNotSupported
 }
 
+// Unwrap returns the underlying response writer.
 func (r *responseRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }

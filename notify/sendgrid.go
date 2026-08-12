@@ -14,6 +14,7 @@ import (
 
 const defaultSendGridEndpoint = "https://api.sendgrid.com/v3/mail/send"
 
+// SendGridConfig defines credentials, sender identity, transport, and request bounds.
 type SendGridConfig struct {
 	APIKey            string
 	FromEmail         string
@@ -25,12 +26,14 @@ type SendGridConfig struct {
 	AllowInsecureHTTP bool
 }
 
+// SendGridProvider sends email through the SendGrid HTTPS API.
 type SendGridProvider struct {
 	config   SendGridConfig
 	endpoint *url.URL
 	http     *http.Client
 }
 
+// NewSendGridProvider validates configuration without sending a request.
 func NewSendGridProvider(config SendGridConfig) (*SendGridProvider, error) {
 	if strings.TrimSpace(config.APIKey) == "" {
 		return nil, errors.New("notify: SendGrid API key is required")
@@ -60,6 +63,7 @@ func NewSendGridProvider(config SendGridConfig) (*SendGridProvider, error) {
 	return &SendGridProvider{config: config, endpoint: endpoint, http: config.HTTPClient}, nil
 }
 
+// SendEmail validates and submits one bounded SendGrid request.
 func (provider *SendGridProvider) SendEmail(ctx context.Context, message EmailMessage) error {
 	if provider == nil || provider.http == nil || provider.endpoint == nil {
 		return ErrEmailProviderNotConfigured

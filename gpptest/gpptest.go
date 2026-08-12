@@ -148,6 +148,7 @@ func (r *ResponseWrapper) DecodeInto(target any) *ResponseWrapper {
 	return r
 }
 
+// Decode parses a response JSON body into T and fails the active test on error.
 func Decode[T any](response *ResponseWrapper) T {
 	response.t.Helper()
 	var target T
@@ -155,6 +156,7 @@ func Decode[T any](response *ResponseWrapper) T {
 	return target
 }
 
+// Problem decodes and validates an RFC 7807 response body.
 func (r *ResponseWrapper) Problem() gpp.ProblemDetails {
 	r.t.Helper()
 	problem, err := ParseProblemDetails(r.Recorder.Body.Bytes())
@@ -164,6 +166,7 @@ func (r *ResponseWrapper) Problem() gpp.ProblemDetails {
 	return problem
 }
 
+// ParseProblemDetails strictly decodes one valid RFC 7807 document.
 func ParseProblemDetails(body []byte) (gpp.ProblemDetails, error) {
 	var problem gpp.ProblemDetails
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -180,6 +183,7 @@ func ParseProblemDetails(body []byte) (gpp.ProblemDetails, error) {
 	return problem, nil
 }
 
+// AssertProblem verifies the HTTP and problem status plus an optional problem type.
 func (r *ResponseWrapper) AssertProblem(status int, problemType string) *ResponseWrapper {
 	r.t.Helper()
 	problem := r.Problem()
@@ -192,6 +196,7 @@ func (r *ResponseWrapper) AssertProblem(status int, problemType string) *Respons
 	return r
 }
 
+// AssertViolation verifies that a Problem Details response contains a field violation.
 func (r *ResponseWrapper) AssertViolation(field, rule string) *ResponseWrapper {
 	r.t.Helper()
 	problem := r.Problem()
@@ -204,6 +209,7 @@ func (r *ResponseWrapper) AssertViolation(field, rule string) *ResponseWrapper {
 	return r
 }
 
+// AssertHeader verifies an exact response header value.
 func (r *ResponseWrapper) AssertHeader(name, expected string) *ResponseWrapper {
 	r.t.Helper()
 	if actual := r.Recorder.Header().Get(name); actual != expected {
@@ -212,6 +218,7 @@ func (r *ResponseWrapper) AssertHeader(name, expected string) *ResponseWrapper {
 	return r
 }
 
+// AssertContentType verifies the parsed response media type.
 func (r *ResponseWrapper) AssertContentType(expected string) *ResponseWrapper {
 	r.t.Helper()
 	actual, _, err := mime.ParseMediaType(r.Recorder.Header().Get("Content-Type"))
@@ -221,6 +228,7 @@ func (r *ResponseWrapper) AssertContentType(expected string) *ResponseWrapper {
 	return r
 }
 
+// AssertRequestID verifies response correlation and Problem Details trace IDs.
 func (r *ResponseWrapper) AssertRequestID() *ResponseWrapper {
 	r.t.Helper()
 	requestID := r.Recorder.Header().Get("X-Request-ID")
@@ -234,6 +242,7 @@ func (r *ResponseWrapper) AssertRequestID() *ResponseWrapper {
 	return r
 }
 
+// AssertJSONPath verifies a dot-separated object or array path in a JSON response.
 func (r *ResponseWrapper) AssertJSONPath(path string, expected any) *ResponseWrapper {
 	r.t.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(r.Recorder.Body.Bytes()))

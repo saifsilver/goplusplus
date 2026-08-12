@@ -15,6 +15,7 @@ import (
 	"github.com/saifsilver/goplusplus/id"
 )
 
+// Application owns the example's account storage and authentication policies.
 type Application struct {
 	db        *sql.DB
 	tokens    *auth.TokenManager
@@ -32,6 +33,7 @@ type credentials struct {
 	Password string `json:"password" validate:"required,min=12,max=1024"`
 }
 
+// New validates dependencies and creates an authentication example application.
 func New(db *sql.DB, tokens *auth.TokenManager, passwords *auth.PasswordPolicy) (*Application, error) {
 	if db == nil || tokens == nil || passwords == nil {
 		return nil, errors.New("authentication example: database, token manager, and password policy are required")
@@ -39,6 +41,7 @@ func New(db *sql.DB, tokens *auth.TokenManager, passwords *auth.PasswordPolicy) 
 	return &Application{db: db, tokens: tokens, passwords: passwords}, nil
 }
 
+// RegisterRoutes adds registration, login, and account endpoints to app.
 func (application *Application) RegisterRoutes(app *gpp.Engine) {
 	app.POST("/auth/register", application.register)
 	app.POST("/auth/login", application.login)

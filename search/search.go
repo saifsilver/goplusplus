@@ -25,6 +25,7 @@ func NewInMemSearchEngine() *InMemSearchEngine {
 	}
 }
 
+// IndexDocument stores a document in the named in-memory index.
 func (e *InMemSearchEngine) IndexDocument(ctx context.Context, indexName, docID string, payload any) error {
 	e.mu.Lock()
 	if e.store[indexName] == nil {
@@ -35,6 +36,7 @@ func (e *InMemSearchEngine) IndexDocument(ctx context.Context, indexName, docID 
 	return nil
 }
 
+// SearchKeyword returns documents whose IDs contain query, ignoring case.
 func (e *InMemSearchEngine) SearchKeyword(ctx context.Context, indexName, query string) ([]map[string]any, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -51,11 +53,13 @@ func (e *InMemSearchEngine) SearchKeyword(ctx context.Context, indexName, query 
 	return results, nil
 }
 
+// Search queries the legacy default index.
 func (e *InMemSearchEngine) Search(ctx context.Context, query string) ([]map[string]any, error) {
 	return e.SearchKeyword(ctx, "default", query)
 }
 
-// Legacy Engine alias for backwards compatibility
+// Client is the legacy in-memory engine name retained for source compatibility.
 type Client = InMemSearchEngine
 
+// New returns an empty legacy Client.
 func New() *Client { return NewInMemSearchEngine() }

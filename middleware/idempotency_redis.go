@@ -16,6 +16,7 @@ const (
 	defaultRedisTransactionRetries = 8
 )
 
+// RedisIdempotencyConfig defines key namespacing and optimistic retry bounds.
 type RedisIdempotencyConfig struct {
 	Prefix             string
 	TransactionRetries int
@@ -35,6 +36,7 @@ type redisIdempotencyRecord struct {
 	Response    *IdempotencyResponse `json:"response,omitempty"`
 }
 
+// NewRedisIdempotencyStore validates and wraps an application-owned Redis client.
 func NewRedisIdempotencyStore(client redis.UniversalClient, config RedisIdempotencyConfig) (*RedisIdempotencyStore, error) {
 	if client == nil {
 		return nil, errors.New("idempotency: Redis client is required")
@@ -51,6 +53,7 @@ func NewRedisIdempotencyStore(client redis.UniversalClient, config RedisIdempote
 	return &RedisIdempotencyStore{client: client, prefix: config.Prefix, retries: config.TransactionRetries}, nil
 }
 
+// Claim atomically acquires or reads an idempotency record.
 func (s *RedisIdempotencyStore) Claim(
 	ctx context.Context, key, fingerprint, owner string, ttl time.Duration,
 ) (IdempotencyClaim, error) {
@@ -83,6 +86,7 @@ func (s *RedisIdempotencyStore) Claim(
 	return IdempotencyClaim{}, errors.New("idempotency: Redis claim retry limit exceeded")
 }
 
+// Complete stores a replayable response when owner still holds the pending claim.
 func (s *RedisIdempotencyStore) Complete(
 	ctx context.Context, key, fingerprint, owner string, response IdempotencyResponse, ttl time.Duration,
 ) error {
@@ -101,6 +105,7 @@ func (s *RedisIdempotencyStore) Complete(
 	}, ttl)
 }
 
+// Release removes a pending claim owned by owner.
 func (s *RedisIdempotencyStore) Release(ctx context.Context, key, owner string) error {
 	if err := ctx.Err(); err != nil {
 		return err

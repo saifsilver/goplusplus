@@ -8,14 +8,20 @@ import (
 	"time"
 )
 
+// TaskStatus identifies process-local task execution state.
 type TaskStatus string
 
 const (
-	StatusPending   TaskStatus = "PENDING"
-	StatusRunning   TaskStatus = "RUNNING"
+	// StatusPending indicates a registered task not yet running.
+	StatusPending TaskStatus = "PENDING"
+	// StatusRunning indicates an active task attempt.
+	StatusRunning TaskStatus = "RUNNING"
+	// StatusCompleted indicates successful process-local completion.
 	StatusCompleted TaskStatus = "COMPLETED"
-	StatusFailed    TaskStatus = "FAILED"
-	StatusRetrying  TaskStatus = "RETRYING"
+	// StatusFailed indicates exhausted retries.
+	StatusFailed TaskStatus = "FAILED"
+	// StatusRetrying indicates a subsequent attempt is running.
+	StatusRetrying TaskStatus = "RETRYING"
 )
 
 // TaskInfo stores complete execution status, retries, and error details for a background task.
@@ -30,7 +36,8 @@ type TaskInfo struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
-// TaskTracker manages persistent background task statuses and automatic retries.
+// TaskTracker manages process-local background task statuses and retries.
+// State is lost on restart; use a durable queue for production work.
 type TaskTracker struct {
 	mu    sync.RWMutex
 	tasks map[string]*TaskInfo
@@ -45,7 +52,7 @@ func NewTaskTracker() *TaskTracker {
 	}
 }
 
-// AsyncTask dispatches a background task with automatic retries on failure and persistent status tracking.
+// AsyncTask dispatches a process-local background task with automatic retries.
 func AsyncTask(name string, maxRetries int, fn func(ctx context.Context) error) string {
 	return globalTracker.Dispatch(name, maxRetries, fn)
 }

@@ -2,17 +2,20 @@ package saga
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 )
 
+// Step defines one action and its optional reverse compensation.
 type Step struct {
 	Name       string
 	Execute    func(ctx context.Context) error
 	Compensate func(ctx context.Context) error
 }
 
-// Coordinator manages multi-microservice distributed transactions with automatic reverse compensation on failure (Uber Cadence style).
+// Coordinator runs process-local saga steps with reverse compensation.
+// It is not a durable workflow engine and cannot recover work after a process exit.
 type Coordinator struct {
 	steps []Step
 }
@@ -31,19 +34,26 @@ func (c *Coordinator) AddStep(name string, execute, compensate func(ctx context.
 	})
 }
 
-// Execute executes all saga steps in order. If any step fails, it executes compensation functions in reverse order!
+// Execute runs steps in order and compensates completed steps in reverse order.
+// The returned error includes both the failed step and any compensation failures.
 func (c *Coordinator) Execute(ctx context.Context) error {
 	var executed []Step
 
 	for _, step := range c.steps {
+		if step.Execute == nil {
+			return fmt.Errorf("saga: step %q has no execute function", step.Name)
+		}
 		slog.Info("saga: Executing transaction step", slog.String("step", step.Name))
 		if err := step.Execute(ctx); err != nil {
 			slog.Error("saga: Step failed; initiating automatic reverse compensation",
 				slog.String("failed_step", step.Name),
 				slog.String("error", err.Error()),
 			)
-			c.compensateReverse(ctx, executed)
-			return fmt.Errorf("saga: step '%s' failed (reverse compensation completed): %w", step.Name, err)
+			stepErr := fmt.Errorf("saga: step %q failed: %w", step.Name, err)
+			if compensationErr := c.compensateReverse(ctx, executed); compensationErr != nil {
+				return errors.Join(stepErr, compensationErr)
+			}
+			return stepErr
 		}
 		executed = append(executed, step)
 	}
@@ -52,12 +62,16 @@ func (c *Coordinator) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (c *Coordinator) compensateReverse(ctx context.Context, executed []Step) {
+func (c *Coordinator) compensateReverse(ctx context.Context, executed []Step) error {
+	var compensationErrors []error
 	for i := len(executed) - 1; i >= 0; i-- {
 		step := executed[i]
 		if step.Compensate != nil {
 			slog.Warn("saga: Compensating step", slog.String("step", step.Name))
-			_ = step.Compensate(ctx)
+			if err := step.Compensate(ctx); err != nil {
+				compensationErrors = append(compensationErrors, fmt.Errorf("saga: compensate step %q: %w", step.Name, err))
+			}
 		}
 	}
+	return errors.Join(compensationErrors...)
 }

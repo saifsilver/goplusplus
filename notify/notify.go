@@ -14,10 +14,13 @@ const (
 )
 
 var (
+	// ErrEmailProviderNotConfigured indicates that email delivery is unavailable.
 	ErrEmailProviderNotConfigured = errors.New("notify: email provider is not configured")
-	ErrSMSProviderNotConfigured   = errors.New("notify: SMS provider is not configured")
+	// ErrSMSProviderNotConfigured indicates that SMS delivery is unavailable.
+	ErrSMSProviderNotConfigured = errors.New("notify: SMS provider is not configured")
 )
 
+// EmailMessage is a bounded email delivery request.
 type EmailMessage struct {
 	To      string
 	Subject string
@@ -25,15 +28,18 @@ type EmailMessage struct {
 	HTML    bool
 }
 
+// SMSMessage is a bounded SMS delivery request.
 type SMSMessage struct {
 	ToPhone string
 	Text    string
 }
 
+// EmailProvider sends validated email messages.
 type EmailProvider interface {
 	SendEmail(context.Context, EmailMessage) error
 }
 
+// SMSProvider sends validated SMS messages.
 type SMSProvider interface {
 	SendSMS(context.Context, SMSMessage) error
 }
@@ -44,6 +50,7 @@ type Client struct {
 	sms   SMSProvider
 }
 
+// NewClient constructs a notification router with at least one provider.
 func NewClient(email EmailProvider, sms SMSProvider) (*Client, error) {
 	if email == nil && sms == nil {
 		return nil, errors.New("notify: at least one provider is required")
@@ -51,6 +58,7 @@ func NewClient(email EmailProvider, sms SMSProvider) (*Client, error) {
 	return &Client{email: email, sms: sms}, nil
 }
 
+// SendEmail delegates to the configured email provider.
 func (client *Client) SendEmail(ctx context.Context, message EmailMessage) error {
 	if client == nil || client.email == nil {
 		return ErrEmailProviderNotConfigured
@@ -58,6 +66,7 @@ func (client *Client) SendEmail(ctx context.Context, message EmailMessage) error
 	return client.email.SendEmail(ctx, message)
 }
 
+// SendSMS delegates to the configured SMS provider.
 func (client *Client) SendSMS(ctx context.Context, message SMSMessage) error {
 	if client == nil || client.sms == nil {
 		return ErrSMSProviderNotConfigured

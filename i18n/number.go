@@ -15,9 +15,12 @@ import (
 )
 
 var (
-	ErrInvalidCurrency      = errors.New("i18n: invalid ISO 4217 currency")
+	// ErrInvalidCurrency indicates a malformed ISO 4217 currency code.
+	ErrInvalidCurrency = errors.New("i18n: invalid ISO 4217 currency")
+	// ErrInvalidNumberOptions indicates contradictory precision settings.
 	ErrInvalidNumberOptions = errors.New("i18n: invalid number formatting options")
-	ErrUnsupportedNumber    = errors.New("i18n: unsupported numeric value")
+	// ErrUnsupportedNumber indicates a value outside supported built-in numeric types.
+	ErrUnsupportedNumber = errors.New("i18n: unsupported numeric value")
 )
 
 // NumberOptions controls decimal precision and grouping. A zero-value uses up

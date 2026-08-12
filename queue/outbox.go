@@ -15,15 +15,18 @@ import (
 	"github.com/saifsilver/goplusplus/dbcore"
 )
 
+// OutboxDatabase is the transaction and dialect contract required by Outbox.
 type OutboxDatabase interface {
 	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
 	Dialect() string
 }
 
+// OutboxPublisher publishes one keyed message with binary headers.
 type OutboxPublisher interface {
 	Publish(context.Context, string, []byte, []byte, map[string][]byte) error
 }
 
+// OutboxConfig defines batch, polling, lease, and retry bounds.
 type OutboxConfig struct {
 	BatchSize     int
 	PollInterval  time.Duration
@@ -32,6 +35,7 @@ type OutboxConfig struct {
 	MaxAttempts   int
 }
 
+// OutboxMessage is an event inserted atomically with application data.
 type OutboxMessage struct {
 	ID          string
 	Topic       string
@@ -41,6 +45,7 @@ type OutboxMessage struct {
 	AvailableAt time.Time
 }
 
+// Outbox claims and publishes persisted messages with at-least-once delivery.
 type Outbox struct {
 	database  OutboxDatabase
 	publisher OutboxPublisher
@@ -52,6 +57,7 @@ type outboxRecord struct {
 	Attempts int
 }
 
+// NewOutbox validates dependencies and applies bounded defaults.
 func NewOutbox(database OutboxDatabase, publisher OutboxPublisher, config OutboxConfig) (*Outbox, error) {
 	if database == nil {
 		return nil, errors.New("queue/outbox: database is required")
@@ -157,6 +163,7 @@ func (outbox *Outbox) Enqueue(ctx context.Context, tx *sql.Tx, message OutboxMes
 	return message.ID, nil
 }
 
+// PublishPending claims and attempts one bounded batch of available messages.
 func (outbox *Outbox) PublishPending(ctx context.Context) (int, error) {
 	records, token, err := outbox.claim(ctx)
 	if err != nil {
@@ -179,6 +186,7 @@ func (outbox *Outbox) PublishPending(ctx context.Context) (int, error) {
 	return len(records), errors.Join(publishErrors...)
 }
 
+// Run polls for available messages until ctx is canceled.
 func (outbox *Outbox) Run(ctx context.Context) error {
 	ticker := time.NewTicker(outbox.config.PollInterval)
 	defer ticker.Stop()

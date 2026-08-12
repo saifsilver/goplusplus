@@ -55,8 +55,10 @@ type Codec interface {
 // standard encoding/json representations such as map[string]any.
 type JSONCodec struct{}
 
+// Marshal encodes value as JSON.
 func (JSONCodec) Marshal(value any) ([]byte, error) { return json.Marshal(value) }
 
+// Unmarshal decodes JSON into standard Go JSON representations.
 func (JSONCodec) Unmarshal(data []byte) (any, error) {
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
@@ -176,6 +178,7 @@ func applyRedisTimeouts(options *redis.Options, config RedisConfig) {
 	}
 }
 
+// Get retrieves and decodes a Redis cache value.
 func (s *RedisStore) Get(ctx context.Context, key string) (any, bool, error) {
 	redisKey, err := s.redisKey(key)
 	if err != nil {
@@ -221,6 +224,7 @@ func (s *RedisStore) getWithTTL(ctx context.Context, key string) (any, bool, tim
 	return value, true, remaining, nil
 }
 
+// Set encodes and stores a Redis value with a positive TTL.
 func (s *RedisStore) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	if ttl <= 0 {
 		return errors.New("cache: Redis TTL must be positive")
@@ -239,6 +243,7 @@ func (s *RedisStore) Set(ctx context.Context, key string, value any, ttl time.Du
 	return nil
 }
 
+// Delete asynchronously unlinks a Redis cache key.
 func (s *RedisStore) Delete(ctx context.Context, key string) error {
 	redisKey, err := s.redisKey(key)
 	if err != nil {
@@ -250,6 +255,7 @@ func (s *RedisStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// GetOrSet coordinates misses across local callers and Redis-backed instances.
 func (s *RedisStore) GetOrSet(ctx context.Context, key string, ttl time.Duration, fetcher func() (any, error)) (any, error) {
 	if ttl <= 0 {
 		return nil, errors.New("cache: Redis TTL must be positive")
@@ -435,6 +441,7 @@ func (lock *redisLoadLock) release() {
 	})
 }
 
+// InvalidatePrefix scans and unlinks namespaced keys beginning with prefix.
 func (s *RedisStore) InvalidatePrefix(ctx context.Context, prefix string) error {
 	pattern := s.prefix + escapeRedisPattern(prefix) + "*"
 	var cursor uint64
@@ -459,6 +466,7 @@ func (s *RedisStore) InvalidatePrefix(ctx context.Context, prefix string) error 
 // components such as distributed idempotency.
 func (s *RedisStore) Client() redis.UniversalClient { return s.client }
 
+// Close releases the Redis client only when the store owns it.
 func (s *RedisStore) Close() error {
 	if !s.ownsClient {
 		return nil

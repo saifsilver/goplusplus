@@ -170,7 +170,7 @@ func (engine *Engine) HandleCLI(opts CLIOptions) bool {
 	return false
 }
 
-// ServeHTTP implements the standard net/http.Handler interface for zero-alloc request processing.
+// ServeHTTP implements net/http.Handler using pooled request contexts.
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := engine.pool.Get().(*Context)
 	c.reset(w, req)
