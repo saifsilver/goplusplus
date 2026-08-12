@@ -118,13 +118,14 @@ func Enable(engine *gpp.Engine, configs ...Config) (*TokenManager, error) {
 			return c.InternalError("Password hashing failed")
 		}
 
+		now := time.Now().UTC().Truncate(time.Millisecond)
 		user := User{
 			Email:        strings.ToLower(req.Email),
 			PasswordHash: hash,
 			Name:         req.Name,
 			Role:         "user",
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		}
 
 		if err := userORM.Save(c.Request.Context(), &user); err != nil {
