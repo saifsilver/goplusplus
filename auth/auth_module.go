@@ -196,7 +196,7 @@ func Enable(engine *gpp.Engine, configs ...Config) (*TokenManager, error) {
 			return c.NotFound("User profile not found")
 		}
 
-		return c.OK(item)
+		return c.OK(gpp.H{"user": item})
 	})
 
 	group.POST("/logout", func(c *gpp.Context) error {
