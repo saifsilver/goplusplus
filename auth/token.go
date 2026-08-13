@@ -556,7 +556,6 @@ func OptionalAuthenticateWithManager(manager *TokenManager) gpp.HandlerFunc {
 	}
 }
 
-
 // UniversalAuth accepts a valid process-local session or compatibility JWT.
 // New applications should prefer UniversalAuthWithManager.
 func UniversalAuth(secret string, sessions *RedisSessionManager) gpp.HandlerFunc {

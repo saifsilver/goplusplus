@@ -36,8 +36,6 @@ func BindUserResource[T any](target any, relativePath string, tableName ...strin
 	sub := group.Group(relativePath)
 	orm := dbcore.NewORM[T](client, tableName...)
 
-
-
 	// GET list (user-scoped with pagination)
 	sub.GET("", func(c *Context) error {
 		userID, err := c.RequireUserID()

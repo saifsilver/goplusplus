@@ -59,7 +59,6 @@ type Engine struct {
 	JSONBinding     JSONBindingConfig
 }
 
-
 // New creates a fresh instance of the go++ engine with high-performance default configurations.
 func New() *Engine {
 	engine := &Engine{

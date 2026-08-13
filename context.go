@@ -89,7 +89,6 @@ func (c *Context) DB() *sql.DB {
 	return nil
 }
 
-
 type responseTracker struct {
 	http.ResponseWriter
 	written bool

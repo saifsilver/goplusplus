@@ -29,17 +29,20 @@ type Config struct {
 	MaxTTL     time.Duration
 }
 
+// RegisterRequest represents the payload for user registration.
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=6"`
 	Name     string `json:"name"`
 }
 
+// LoginRequest represents the payload for user login authentication.
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"`
 }
 
+// Response represents the payload returned upon successful auth operations.
 type Response struct {
 	Token string `json:"token"`
 	User  *User  `json:"user"`

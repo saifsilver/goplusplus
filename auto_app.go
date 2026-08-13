@@ -13,7 +13,6 @@ import (
 	"github.com/saifsilver/goplusplus/dbcore"
 )
 
-
 // AppConfig defines options for high-level zero-boilerplate app initialization.
 type AppConfig struct {
 	Env         string

@@ -345,7 +345,6 @@ func (o *ORM[T]) DeleteByID(ctx context.Context, id any) error {
 	return err
 }
 
-
 // AutoMigrate creates the database table automatically if it does not exist based on struct fields.
 // Supports full SQL type mapping: SMALLINT, INTEGER, BIGINT, REAL, DOUBLE PRECISION, BOOLEAN, TIMESTAMP, TEXT.
 func (o *ORM[T]) AutoMigrate(ctx context.Context) error {
@@ -456,7 +455,6 @@ func AutoMigrateModel(ctx context.Context, client *Client, model any) error {
 	_, err := client.Exec(ctx, createSQL)
 	return err
 }
-
 
 // goTypeToSQL maps a Go reflect.Type to the most appropriate SQL column type.
 func goTypeToSQL(t reflect.Type) string {
