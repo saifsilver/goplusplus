@@ -3,6 +3,8 @@
 .tmp/
 .gopath/
 .tools/
+go.work
+go.work.sum
 
 # Binary outputs
 basic
